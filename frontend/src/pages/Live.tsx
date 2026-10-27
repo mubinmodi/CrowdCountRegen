@@ -18,10 +18,6 @@ const GRID = {
 } as const;
 type Columns = keyof typeof GRID;
 
-function isOver(camera: Camera, status?: CameraStatus) {
-  return camera.threshold !== null && (status?.occupancy ?? 0) > camera.threshold;
-}
-
 /** Video viewport: the MJPEG stream when running, otherwise a status placeholder. */
 function Feed({ camera, status, large = false }: { camera: Camera; status?: CameraStatus; large?: boolean }) {
   const state = status?.state ?? "connecting";
@@ -54,7 +50,7 @@ function Feed({ camera, status, large = false }: { camera: Camera; status?: Came
 }
 
 function CameraTile({ camera, status, onFocus }: { camera: Camera; status?: CameraStatus; onFocus: () => void }) {
-  const over = isOver(camera, status);
+  const over = status?.over_limit ?? false;
   const state = status?.state ?? "connecting";
   return (
     <article className={cx("group panel overflow-hidden", over && "animate-alarm border-alert")}>
@@ -108,7 +104,7 @@ function CameraTile({ camera, status, onFocus }: { camera: Camera; status?: Came
 
 function FocusView({ camera, status, onClose }: { camera: Camera; status?: CameraStatus; onClose: () => void }) {
   const live = useLive();
-  const over = isOver(camera, status);
+  const over = status?.over_limit ?? false;
   const key = String(camera.id);
   const occupancy = status?.occupancy ?? 0;
   const before = valueAgo(live.history, key, 60);

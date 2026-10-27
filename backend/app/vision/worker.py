@@ -5,6 +5,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Self
 
 import cv2
 import numpy as np
@@ -28,10 +29,35 @@ _ZONE = sv.Color.from_hex("#ff8a3d")
 
 @dataclass(frozen=True)
 class CameraConfig:
+    """Everything that shapes frame processing. Changing any of it restarts the worker, which
+    resets tracking, so settings that only interpret the counts (like the alert threshold)
+    belong elsewhere."""
+
     camera_id: int
     source: SourceSpec
     zone: Polygon | None
-    threshold: int | None
+
+
+@dataclass(frozen=True)
+class CameraSnapshot:
+    """A camera's live status, read at one moment."""
+
+    camera_id: int
+    state: str  # starting | connecting | running | waiting | error | stopped
+    error: str | None
+    error_code: str | None
+    hint: str | None
+    occupancy: int
+    unique_entries: int
+    fps: float
+    stream: StreamInfo | None
+    reconnects: int
+    publisher_connected: bool | None = None  # browser cameras only
+    over_limit: bool = False  # occupancy is above the camera's alert threshold
+
+    @classmethod
+    def stopped(cls, camera_id: int) -> Self:
+        return cls(camera_id, "stopped", None, None, None, 0, 0, 0.0, None, 0)
 
 
 class CameraWorker(threading.Thread):
@@ -55,50 +81,50 @@ class CameraWorker(threading.Thread):
         self._jpeg: bytes | None = None
         self._raw: np.ndarray | None = None
         self.jpeg_seq = 0
+        self._occupancy = 0
+        self._unique_entries = 0
 
-        self.occupancy = 0
-        self.fps = 0.0
-        self._error: str | None = None
+        self._fps = 0.0
+        self._error: str | None = None  # processing failure; source failures live on the reader
 
     # -- public, thread-safe accessors ------------------------------------------------------
 
-    @property
-    def unique_entries(self) -> int:
-        return self._counter.unique_entries
+    def snapshot(self) -> CameraSnapshot:
+        camera_id = self.config.camera_id
+        with self._out_lock:
+            has_frame = self._jpeg is not None
+            occupancy, unique_entries = self._occupancy, self._unique_entries
+        reader_state, source_error = self._reader.health
+        processing_error = self._error
 
-    @property
-    def state(self) -> str:
         if self._stop_event.is_set():
-            return "stopped"
-        if self._error:
-            return "error"
-        if self._reader.state == "running" and self._jpeg is None:
-            return "starting"
-        return self._reader.state
+            state = "stopped"
+        elif processing_error:
+            state = "error"
+        elif reader_state == "running" and not has_frame:
+            state = "starting"
+        else:
+            state = reader_state
 
-    @property
-    def error(self) -> str | None:
-        if self._error:
-            return self._error
-        return self._reader.error.message if self._reader.error else None
+        if processing_error:
+            error, error_code, hint = processing_error, "error", None
+        elif source_error:
+            error, error_code, hint = source_error.message, source_error.code, source_error.hint
+        else:
+            error = error_code = hint = None
 
-    @property
-    def error_code(self) -> str | None:
-        if self._error:
-            return "error"
-        return self._reader.error.code if self._reader.error else None
-
-    @property
-    def hint(self) -> str | None:
-        return self._reader.error.hint if self._reader.error and not self._error else None
-
-    @property
-    def stream_info(self) -> StreamInfo | None:
-        return self._reader.info
-
-    @property
-    def reconnects(self) -> int:
-        return self._reader.reconnects
+        return CameraSnapshot(
+            camera_id=camera_id,
+            state=state,
+            error=error,
+            error_code=error_code,
+            hint=hint,
+            occupancy=occupancy,
+            unique_entries=unique_entries,
+            fps=round(self._fps, 1),
+            stream=self._reader.info,
+            reconnects=self._reader.reconnects,
+        )
 
     def latest_jpeg(self) -> tuple[int, bytes | None]:
         with self._out_lock:
@@ -127,7 +153,7 @@ class CameraWorker(threading.Thread):
         while not self._stop_event.is_set():
             seq, frame = self._reader.latest(last_seq, timeout=1.0)
             if frame is None or seq == last_seq:
-                self.fps = 0.0
+                self._fps = 0.0
                 continue
             last_seq = seq
             try:
@@ -143,7 +169,7 @@ class CameraWorker(threading.Thread):
             if spent < min_interval:
                 self._stop_event.wait(min_interval - spent)
             now = time.monotonic()
-            self.fps = 0.9 * self.fps + 0.1 / (now - period_start)
+            self._fps = 0.9 * self._fps + 0.1 / (now - period_start)
             period_start = now
         self._reader.join(timeout=5)
 
@@ -158,15 +184,16 @@ class CameraWorker(threading.Thread):
         detections = self._tracker.update(detections)
         result = self._counter.update(detections, (w, h))
 
-        self.occupancy = result.occupancy
         self.stats.record(datetime.now(UTC), result.occupancy, result.new_entries)
 
         annotated = self._annotate(frame, detections, result.in_zone)
         ok, buf = cv2.imencode(
             ".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, self._settings.jpeg_quality]
         )
-        if ok:
-            with self._out_lock:
+        with self._out_lock:
+            self._occupancy = result.occupancy
+            self._unique_entries = self._counter.unique_entries
+            if ok:
                 self._jpeg = buf.tobytes()
                 self._raw = frame
                 self.jpeg_seq += 1

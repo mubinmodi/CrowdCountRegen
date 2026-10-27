@@ -6,12 +6,12 @@ of holding a request-scoped session open for the whole stream.
 
 import asyncio
 import time
+from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
-from app.api.cameras import camera_status
 from app.config import get_settings
 from app.db import Camera, SessionLocal
 from app.deps import user_from_cookies, websocket_user
@@ -89,7 +89,7 @@ async def live(websocket: WebSocket) -> None:
             await websocket.send_json(
                 {
                     "ts": time.time(),
-                    "cameras": [camera_status(cid, manager).model_dump() for cid in camera_ids],
+                    "cameras": [asdict(manager.status(cid)) for cid in camera_ids],
                 }
             )
             await asyncio.sleep(_STATUS_INTERVAL_S)

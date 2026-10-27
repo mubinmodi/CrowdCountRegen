@@ -47,10 +47,7 @@ export function BrandMark({ className }: { className?: string }) {
 export function useAlerts(cameras: Camera[] | undefined) {
   const { statuses } = useLive();
   const list = cameras ?? [];
-  const overLimit = list.filter((c) => {
-    const s = statuses.get(c.id);
-    return c.threshold !== null && s !== undefined && s.occupancy > c.threshold;
-  });
+  const overLimit = list.filter((c) => statuses.get(c.id)?.over_limit);
   const faults = list.filter((c) => statuses.get(c.id)?.state === "error");
   return { overLimit, faults };
 }

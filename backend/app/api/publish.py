@@ -6,13 +6,13 @@ so the link can be opened on any device. One publisher per camera; a new one tak
 
 import asyncio
 import time
+from dataclasses import asdict
 
 import cv2
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from app.api.cameras import camera_status
 from app.db import Camera, SessionLocal
 from app.vision.manager import CameraManager
 
@@ -63,9 +63,7 @@ async def publish(websocket: WebSocket, token: str) -> None:
                     slot.push(frame)
             if time.monotonic() - last_status >= STATUS_INTERVAL_S:
                 last_status = time.monotonic()
-                await websocket.send_json(
-                    {"type": "status", **camera_status(camera_id, manager).model_dump(mode="json")}
-                )
+                await websocket.send_json({"type": "status", **asdict(manager.status(camera_id))})
     except WebSocketDisconnect:
         pass
     finally:

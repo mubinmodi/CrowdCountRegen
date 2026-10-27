@@ -33,10 +33,16 @@ class FrameReader(threading.Thread):
         self._cond = threading.Condition()
         self._frame: np.ndarray | None = None
         self._seq = 0
-        self.state = "connecting"  # connecting | running | waiting | error | stopped
-        self.error: SourceError | None = None
+        # (state, last error), replaced as one value so readers on other threads never see a
+        # state paired with another moment's error. State: connecting | running | waiting |
+        # error | stopped.
+        self.health: tuple[str, SourceError | None] = ("connecting", None)
         self.info: StreamInfo | None = None
         self.reconnects = 0
+
+    @property
+    def state(self) -> str:
+        return self.health[0]
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -55,10 +61,10 @@ class FrameReader(threading.Thread):
         """Records the error, waits, and returns the next backoff delay."""
         if error.code == "waiting":
             # Not a fault: poll again soon, without growing the delay.
-            self.state, self.error = "waiting", error
+            self.health = ("waiting", error)
             self._stop_event.wait(0.5)
             return backoff
-        self.state, self.error = "error", error
+        self.health = ("error", error)
         log.info(
             "camera %s: %s (%s); retry in %.0fs",
             self._camera_id,
@@ -86,7 +92,7 @@ class FrameReader(threading.Thread):
                 while not self._stop_event.is_set():
                     frame = source.read()
                     if self.state != "running":
-                        self.state, self.error, backoff = "running", None, base_delay
+                        self.health, backoff = ("running", None), base_delay
                     with self._cond:
                         self._frame = frame
                         self._seq += 1
@@ -105,4 +111,4 @@ class FrameReader(threading.Thread):
                     backoff = self._fail(classify(e), backoff)
                 continue
             source.close()
-        self.state = "stopped"
+        self.health = ("stopped", None)

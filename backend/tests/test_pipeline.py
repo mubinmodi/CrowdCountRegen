@@ -18,6 +18,15 @@ def one_person(self, frame):
     )
 
 
+def two_people(self, frame):
+    h, w = frame.shape[:2]
+    return sv.Detections(
+        xyxy=np.array([[w * 0.1, h * 0.2, w * 0.3, h * 0.8], [w * 0.6, h * 0.2, w * 0.8, h * 0.8]]),
+        confidence=np.array([0.95, 0.95]),
+        class_id=np.array([0, 0]),
+    )
+
+
 def wait_for(predicate, timeout=10.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -78,16 +87,44 @@ def test_bad_source_reports_error(client):
     assert status["hint"]
 
 
-def test_editing_camera_restarts_worker(client, video_file):
+def test_only_processing_changes_restart_worker(client, video_file):
     signup(client)
     cam = client.post("/api/cameras", json={"name": "Clip", "source": video_file}).json()
     manager = client.app.state.manager
     first = manager.get(cam["id"])
-    client.patch(f"/api/cameras/{cam['id']}", json={"name": "Renamed"})
-    assert manager.get(cam["id"]) is first  # name change doesn't affect processing
-    client.patch(f"/api/cameras/{cam['id']}", json={"threshold": 3})
+    client.patch(f"/api/cameras/{cam['id']}", json={"name": "Renamed", "threshold": 3})
+    assert manager.get(cam["id"]) is first  # neither affects processing
+    client.patch(f"/api/cameras/{cam['id']}", json={"zone": [[0, 0], [1, 0], [1, 1]]})
     assert manager.get(cam["id"]) is not first
     assert not first.is_alive()
+
+
+def test_alert_threshold_applies_without_resetting_counts(client, video_file, monkeypatch):
+    monkeypatch.setattr(FakeDetector, "detect", two_people)
+    signup(client)
+    cam = client.post(
+        "/api/cameras", json={"name": "Clip", "source": video_file, "threshold": 1}
+    ).json()
+    url = f"/api/cameras/{cam['id']}/status"
+    status = wait_for(lambda: (s := client.get(url).json())["unique_entries"] == 2 and s)
+    assert (status["occupancy"], status["over_limit"]) == (2, True)
+
+    with client.websocket_connect("/api/ws/live") as ws:
+        assert ws.receive_json()["cameras"][0]["over_limit"] is True
+
+    client.patch(f"/api/cameras/{cam['id']}", json={"threshold": 5})
+    status = client.get(url).json()
+    assert status["over_limit"] is False
+    assert status["unique_entries"] == 2  # the same two people, not re-counted
+
+    client.patch(f"/api/cameras/{cam['id']}", json={"threshold": None})
+    assert client.get(url).json()["over_limit"] is False
+
+
+def test_status_of_camera_without_worker_is_stopped(client):
+    manager = client.app.state.manager
+    status = manager.status(12345)
+    assert (status.state, status.occupancy, status.over_limit) == ("stopped", 0, False)
 
 
 def test_same_minute_from_restarted_worker_is_merged(client):

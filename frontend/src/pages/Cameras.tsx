@@ -62,7 +62,7 @@ export function CamerasPage() {
           <tbody>
             {list.map((c) => {
               const s = live.statuses.get(c.id);
-              const over = c.threshold !== null && (s?.occupancy ?? 0) > c.threshold;
+              const over = s?.over_limit ?? false;
               return (
                 <tr key={c.id} className="border-b border-line last:border-0 hover:bg-raised/60">
                   <td className="w-32 px-4 py-3"><StatusTag state={s?.state ?? "connecting"} /></td>

@@ -119,6 +119,7 @@ class CameraStatus(BaseModel):
     stream: StreamInfoOut | None = None
     reconnects: int = 0
     publisher_connected: bool | None = None  # browser cameras only
+    over_limit: bool = False  # occupancy is above the camera's alert threshold
 
 
 class ProbeIn(SourceFields):

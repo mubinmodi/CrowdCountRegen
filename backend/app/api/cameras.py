@@ -17,9 +17,9 @@ from app.schemas import (
     SourceFields,
     StreamInfoOut,
 )
-from app.vision.manager import CameraManager
 from app.vision.sources import SourceSpec, probe
 from app.vision.sources.spec import infer_kind, split_credentials, validate
+from app.vision.worker import CameraSnapshot
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
@@ -76,31 +76,6 @@ def _apply(camera: Camera, values: dict) -> None:
         camera.username = camera.password_enc = None
     else:
         camera.publish_token = None
-
-
-def camera_status(camera_id: int, manager: CameraManager) -> CameraStatus:
-    worker = manager.get(camera_id)
-    if worker is None:
-        return CameraStatus(
-            camera_id=camera_id, state="stopped", error=None, occupancy=0, unique_entries=0, fps=0
-        )
-    info = worker.stream_info
-    publisher = None
-    if worker.config.source.kind == "browser":
-        publisher = manager.browser_hub.slot(camera_id).publisher_connected
-    return CameraStatus(
-        camera_id=camera_id,
-        state=worker.state,
-        error=worker.error,
-        error_code=worker.error_code,
-        hint=worker.hint,
-        occupancy=worker.occupancy,
-        unique_entries=worker.unique_entries,
-        fps=round(worker.fps, 1),
-        stream=StreamInfoOut.model_validate(info) if info else None,
-        reconnects=worker.reconnects,
-        publisher_connected=publisher,
-    )
 
 
 @router.get("", response_model=list[CameraOut])
@@ -205,8 +180,8 @@ def delete_camera(camera: OwnedCamera, db: DbSession, manager: Manager) -> None:
 
 
 @router.get("/{camera_id}/status", response_model=CameraStatus)
-def get_status(camera: OwnedCamera, manager: Manager) -> CameraStatus:
-    return camera_status(camera.id, manager)
+def get_status(camera: OwnedCamera, manager: Manager) -> CameraSnapshot:
+    return manager.status(camera.id)
 
 
 @router.get(

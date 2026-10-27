@@ -3,6 +3,7 @@
 import logging
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -14,7 +15,7 @@ from app.db import Camera, CountSample
 from app.vision.detectors import Detector, build_detector
 from app.vision.sources import BrowserHub, SourceSpec
 from app.vision.stats import MinuteBucket
-from app.vision.worker import CameraConfig, CameraWorker
+from app.vision.worker import CameraConfig, CameraSnapshot, CameraWorker
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ def spec_from_camera(camera: Camera) -> SourceSpec:
 
 def config_from_camera(camera: Camera) -> CameraConfig:
     zone = [(float(x), float(y)) for x, y in camera.zone] if camera.zone else None
-    return CameraConfig(camera.id, spec_from_camera(camera), zone, camera.threshold)
+    return CameraConfig(camera.id, spec_from_camera(camera), zone)
 
 
 class CameraManager:
@@ -50,6 +51,7 @@ class CameraManager:
         self._detector_factory = detector_factory
         self._detector: Detector | None = None
         self._workers: dict[int, CameraWorker] = {}
+        self._thresholds: dict[int, int | None] = {}  # alert limits; not part of CameraConfig
         self.browser_hub = BrowserHub()
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
@@ -82,15 +84,20 @@ class CameraManager:
         with self._lock:
             workers = list(self._workers.values())
             self._workers.clear()
+            self._thresholds.clear()
         for worker in workers:
             self._stop_worker(worker)
 
     def upsert(self, camera: Camera) -> None:
-        """Starts a worker for the camera, replacing any existing one if its config changed."""
+        """Starts a worker for the camera, replacing any existing one if its config changed.
+
+        The alert threshold applies immediately and never restarts the worker.
+        """
         if not self._settings.start_workers:
             return
         config = config_from_camera(camera)
         with self._lock:
+            self._thresholds[camera.id] = camera.threshold
             existing = self._workers.get(camera.id)
             if existing is not None and existing.config == config:
                 return
@@ -103,12 +110,31 @@ class CameraManager:
     def remove(self, camera_id: int, persist: bool = True) -> None:
         with self._lock:
             worker = self._workers.pop(camera_id, None)
+            self._thresholds.pop(camera_id, None)
         if worker is not None:
             self._stop_worker(worker, persist=persist)
         self.browser_hub.discard(camera_id)
 
     def get(self, camera_id: int) -> CameraWorker | None:
         return self._workers.get(camera_id)
+
+    def status(self, camera_id: int) -> CameraSnapshot:
+        """Everything the UI shows about a camera right now, including whether it is over its
+        alert threshold. A camera without a worker reports as stopped."""
+        with self._lock:
+            worker = self._workers.get(camera_id)
+            threshold = self._thresholds.get(camera_id)
+        if worker is None:
+            return CameraSnapshot.stopped(camera_id)
+        snapshot = worker.snapshot()
+        publisher = None
+        if worker.config.source.kind == "browser":
+            publisher = self.browser_hub.slot(camera_id).publisher_connected
+        return replace(
+            snapshot,
+            publisher_connected=publisher,
+            over_limit=threshold is not None and snapshot.occupancy > threshold,
+        )
 
     def _stop_worker(self, worker: CameraWorker, persist: bool = True) -> None:
         worker.stop()

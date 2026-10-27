@@ -62,6 +62,7 @@ export interface CameraStatus {
   stream: StreamInfo | null;
   reconnects: number;
   publisher_connected: boolean | null;
+  over_limit: boolean; // occupancy is above the camera's alert threshold (decided server-side)
 }
 
 export interface ProbeResult {
