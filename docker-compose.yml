@@ -1,0 +1,37 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        DETECTOR_EXTRAS: ${DETECTOR_EXTRAS:-yolo}
+    environment:
+      CC_SECRET_KEY: ${CC_SECRET_KEY:?Set CC_SECRET_KEY, e.g. `openssl rand -hex 32`}
+      CC_DETECTOR: ${CC_DETECTOR:-ultralytics}
+      CC_DETECTOR_MODEL: ${CC_DETECTOR_MODEL:-}
+      CC_COOKIE_SECURE: ${CC_COOKIE_SECURE:-false}
+    volumes:
+      - data:/data
+      - models:/app/models
+      # Mount local videos to use them as camera sources, e.g. /videos/lobby.mp4
+      - ./videos:/videos:ro
+    restart: unless-stopped
+    # ONVIF discovery uses multicast, which can't leave Docker's bridge network. To scan
+    # for cameras from the container, use host networking (and drop the `web` link below):
+    # network_mode: host
+    # For NVIDIA GPUs, uncomment:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+
+  web:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  data:
+  models:

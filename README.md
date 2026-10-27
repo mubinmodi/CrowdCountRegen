@@ -1,67 +1,180 @@
-This is a Project I completed in my Under-Grad in Information Technology from Mumbai University
 # CrowdCounting
-# Real-time Crowd Counting Application with Live Analytics
 
-## Authors:
-- Mubin Modi, Student
-- Zaid Marouf, Student
-- Anvay Wankhede, Student
-- Dr. Shabina Sayed, Faculty
+Real-time people counting for IP cameras, with per-camera counting zones, tracking-based
+unique-visitor counts, threshold alerts, and live + historical analytics.
 
 ![demo](https://github.com/mubinmodi/Crowdcounting/assets/47493706/e1a5d00f-e6cf-4162-b5bb-e5b37161cd80)
 
+Originally built as an undergraduate project at M.H. Saboo Siddik College of Engineering,
+Mumbai (Dept. of Information Technology) by **Mubin Modi, Zaid Marouf and Anvay Wankhede**,
+supervised by **Dr. Shabina Sayed**. Version 2 is a full rewrite on a modern stack; the
+original write-up is in [docs/original-project.md](docs/original-project.md).
 
+## Features
 
-## Affiliation:
-Dept. of Information Technology Engineering, M.H. Saboo Siddik College of Engineering, Mumbai, India
+- **Any live camera**: RTSP/RTSPS, RTMP, SRT, HLS and HTTP MJPEG streams; snapshot-only
+  cameras (Basic/Digest auth); USB webcams; video files; and any phone or laptop camera
+  through a publish link, with no app to install. See [Camera sources](#camera-sources).
+- **Pluggable detector**: [Ultralytics YOLO](https://docs.ultralytics.com) (default: YOLO26n)
+  or Roboflow [RF-DETR](https://github.com/roboflow/rf-detr), switchable via one setting.
+- **Counting zones**: draw a polygon on a live frame. A person counts when their feet are
+  inside it, which avoids double-counting areas covered by more than one camera (the
+  original project's "selective detection").
+- **Tracking**: ByteTrack (from Roboflow [`trackers`](https://github.com/roboflow/trackers))
+  gives each person an ID, so **unique visitors** are counted once, not once per frame.
+- **Live dashboard**: annotated MJPEG video per camera, current occupancy, threshold alerts
+  and a rolling chart, pushed over a WebSocket.
+- **Analytics**: occupancy (average/peak) and visitor entries stored per minute, browsable
+  over 1 hour to 30 days, per camera or combined.
+- **Accounts**: Argon2-hashed passwords, httpOnly session cookies, and every camera, stream
+  and statistic scoped to its owner.
 
+## Architecture
 
-## Abstract:
-The increase in population and the development of countries have led to an increase in crowd occurrences worldwide, necessitating the creation of a crowd analysis tool for security and crowd management. Understanding crowd dynamics and congestion circumstances at crowded scenes is critical for public safety. This paper proposes a Real-time Crowd Counting application with selective detection using YOLOv4, leveraging computer vision and neural networks for crowd counting analytics. Key features include live analytics and selective detection to address security concerns and crowd management.
+```
+frontend/  React 19 + TypeScript + Vite + Tailwind 4, TanStack Query, Recharts
+backend/   FastAPI · SQLAlchemy 2 (SQLite by default, Postgres optional)
+           app/vision/sources/     one module per source type + reader with reconnect/backoff
+           app/vision/worker.py    one thread per camera: detect → track → count → annotate
+           app/vision/manager.py   worker lifecycle + per-minute persistence of counts
+           app/vision/detectors/   ultralytics.py · rfdetr.py · fake.py (no-ML, for tests)
+```
 
-## Introduction:
-Understanding crowd behavior is crucial, especially in environments such as sports events, festivals, and mass gatherings. Crowd analysis is challenging due to complex pedestrian behavior, which poses safety and security challenges. This application focuses on sparse crowd scenarios in locations like malls, hospitals, and schools. Leveraging YOLOv4 for object detection, the system aims to provide accurate real-time crowd counting and analytics to aid security and management decisions.
+All cameras share one detector instance. Inference is serialized with a lock, which on a
+single GPU is about as fast as running in parallel. Each camera runs at most `CC_MAX_FPS`
+(default 15) and drops stale frames rather than falling behind a live stream.
 
-## Methodology:
-The application is hosted locally using Flask and can be deployed on any cloud service. Users can connect their network cameras, providing input for crowd counting. Object detection is performed using YOLOv4, a real-time recognition system trained on the COCO dataset, chosen for its accuracy and efficiency. Selective detection is introduced to address count duplication issues in overlapping camera coverage areas. Live analytics are generated using Server-sent Events, offering users real-time insights into crowd dynamics.
+## Quick start (local)
 
-![image](https://github.com/mubinmodi/Crowdcounting/assets/47493706/4cdb3658-cf75-4b06-a7dd-348b3b405b18)
+Requirements: Python 3.12–3.13 with [uv](https://docs.astral.sh/uv/), and Node 22+ with npm 11.
 
- This diagram appears to represent a system flowchart for a crowd counting application, detailing how the different modules of the system interact with each other. Here's a step-by-step explanation:
+```bash
+# 1. Backend (http://localhost:8000, API docs at /docs)
+cd backend
+uv sync --extra yolo          # or --extra rfdetr, or both
+uv run python -m app.seed     # optional: demo account + sample video camera
+uv run uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3
+```
 
-1. **Configuration Module**:
-   - **Actor**: This is the user who interacts with the system.
-   - **Action**: The user creates an account or logs into an existing account.
-   - **Data Storage**: All user information is stored in the `mongodb` database.
-   - **Camera Setup**: The user sets up cameras if not already set up. The IP addresses of the cameras are sent as input to the system.
-   - **Zone Setup**: The user sends the zone coordinates and other edited data, such as detection areas, to the system.
+```bash
+# 2. Frontend (http://localhost:5173, proxies /api to the backend)
+cd frontend
+npm install
+npm run dev
+```
 
-2. **Crowd Counting Module**:
-   - **Video Stream**: The system starts the video stream from the cameras.
-   - **Processing**: For each frame of the video stream, the system uses an object detection module (YOLO - You Only Look Once) to identify individuals.
-   - **Default Boundary**: The system sets a default boundary for the detection zone if it has not been edited by the user.
-   - **Counting**: The system counts the number of individuals within the designated zones for each frame.
-   - **Output Stream**: The processed video stream, with the count overlay, is sent to the display page.
+The seed script creates `demo@example.com` / `demo-password` with a camera playing
+Roboflow's public "people walking" clip. Model weights download automatically on first use:
+YOLO weights go to `backend/models/` and RF-DETR weights to `~/.roboflow/`.
 
-3. **Display Module**:
-   - **Live Feed Count**: The count of individuals is displayed on the live video feed.
-   - **Cumulative Count**: A cumulative count of all individuals detected by all cameras is also displayed.
+## Camera sources
 
-4. **Editing Module**:
-   - **Detection Zone Editing**: The user can add or edit the detection zones.
-   - **Camera Editing**: The user can edit or delete cameras from the system.
-   - **Configuration Check**: The system checks if the configurations are set up. If not, it loops back to allow further editing.
+Add cameras under **Cameras → Add camera**, pick a source type, and press **Test connection**
+before saving. It shows a live preview frame with the resolution, codec and time to first
+frame, or a specific error (wrong password, wrong path, unreachable, timed out) with a hint.
 
-5. **Live Analytics**:
-   - **Live Count Graph**: The system displays a live graph showing the count of individuals over time.
-   - **Previous Counts**: It provides analytics such as previous day count, previous month count, and the average count.
-   - **Max Count**: The system displays the maximum count attained during a specified period.
-   - **Total Count**: A total count of individuals detected over time is presented.
+| Type | Examples | Notes |
+|---|---|---|
+| Network stream | `rtsp://192.168.1.64:554/Streaming/Channels/102`, `rtsps://…`, `rtmp://…`, `srt://…`, `http://…/live.m3u8`, `http://phone:8080/video` | Decoded with FFmpeg (PyAV). RTSP defaults to **TCP** transport (UDP/auto selectable) to avoid smeared frames over Wi-Fi and VPNs. |
+| Snapshot URL | `http://cam/cgi-bin/snapshot.cgi` | For cameras that only serve still images; polled every 500 ms by default. Basic or Digest auth, picked from the camera's challenge. |
+| Phone / browser | publish link + QR code | Open the link on any device and tap **Start camera**; frames stream over a WebSocket. A second device takes over from the first. |
+| USB webcam | `0`, `/dev/video0` | A camera attached to the server. |
+| Video file | `/videos/lobby.mp4` | Loops at its native frame rate, for demos. |
 
-The flowchart visually maps out the process flow and the interactions between various modules within a crowd counting application, which seems to include user account management, video processing for crowd counting, display of real-time data, editing tools for configurations, and live analytics for monitoring crowd sizes over different time frames.
+**Finding the URL.** Use **Build from brand template** (Hikvision, Dahua/Amcrest, Reolink, Axis,
+Tapo, UniFi Protect, Hanwha, Foscam, …), or **Find on network (ONVIF)** to scan the LAN and
+pick a stream profile from the camera itself. For counting, a camera's lower-resolution
+*sub-stream* is usually plenty and much lighter on bandwidth and CPU.
 
-## Performance and Output:
-Performance comparison with other algorithms demonstrates YOLOv4's optimal speed and accuracy for real-time object detection. Output showcases the application's capabilities in both pre-recorded and live video scenarios, highlighting crowd counting, object detection, selective detection, and live analytics features. The application offers a user-friendly solution for crowd management and security enhancement.
+**Credentials** go in their own fields; any `user:pass@` pasted into a URL is moved there.
+Passwords are encrypted at rest with a key derived from `CC_SECRET_KEY` and are never sent
+back to the browser. Changing `CC_SECRET_KEY` makes stored camera passwords unreadable, and
+those cameras report an auth error until their password is re-entered.
 
-## Conclusion:
-The developed Real-time Crowd Counting application provides live analytics and selective detection features, addressing security concerns and aiding crowd management. With its ease of setup and usability in sparse crowd scenarios, the application offers practical solutions for infrastructure improvement and security enhancement. Future iterations aim to further enhance object detection capabilities using newer versions of the YOLO framework.
+**Resilience.** Every connection has open and read timeouts (`CC_OPEN_TIMEOUT_S`,
+`CC_READ_TIMEOUT_S`), so a hung camera can't freeze its worker. Failed or dropped streams
+reconnect with exponential backoff, up to `CC_RECONNECT_MAX_DELAY_S`. Each camera's page shows
+live stream health: state, last error with a hint, resolution, codec and reconnect count.
+
+**Phones need HTTPS.** Browsers only allow camera access on secure pages (or `localhost`).
+In development run `npm run dev:lan`, which serves `https://<your-LAN-IP>:5173` with a
+self-signed certificate (accept the warning once on the phone). Set the publish panel's
+*Base URL* to that address so the QR code points to it. In production, put the app behind
+HTTPS.
+
+**ONVIF discovery** uses multicast, which doesn't cross routers or Docker's bridge network:
+run the backend with `network_mode: host` to scan from a container. On macOS the app that
+runs the backend needs *Local Network* permission (System Settings → Privacy & Security). If
+discovery is blocked, you can still enter a camera's IP by hand.
+
+## Docker
+
+```bash
+export CC_SECRET_KEY=$(openssl rand -hex 32)
+docker compose up --build        # → http://localhost:8080
+```
+
+Choose the detector with `DETECTOR_EXTRAS="rfdetr" CC_DETECTOR=rfdetr docker compose up --build`.
+Put video files in `./videos/` and use `/videos/<file>` as the camera source. The images use
+PyPI's PyTorch wheels, which include CUDA on Linux. Uncomment the `deploy` block in
+`docker-compose.yml` to use an NVIDIA GPU.
+
+## Configuration
+
+Environment variables (or `backend/.env`; see [`backend/.env.example`](backend/.env.example)):
+
+| Variable | Default | |
+|---|---|---|
+| `CC_SECRET_KEY` | dev key | **Required in production.** Signs session tokens. |
+| `CC_DATABASE_URL` | `sqlite:///./crowdcounting.db` | e.g. `postgresql+psycopg://…` (`uv sync --extra postgres`) |
+| `CC_DETECTOR` | `ultralytics` | `ultralytics`, `rfdetr`, or `fake` |
+| `CC_DETECTOR_MODEL` | `models/yolo26n.pt` / `nano` | Ultralytics weights name/path, or RF-DETR size (`nano`…`large`) |
+| `CC_CONFIDENCE` | `0.4` | Minimum detection confidence |
+| `CC_DEVICE` | auto | `cpu`, `cuda:0`, `mps` |
+| `CC_MAX_FPS` | `15` | Processing cap per camera |
+| `CC_FRAME_WIDTH` | `960` | Frames are downscaled to this width |
+| `CC_COOKIE_SECURE` | `false` | Set `true` behind HTTPS |
+| `CC_OPEN_TIMEOUT_S` / `CC_READ_TIMEOUT_S` | `8` / `8` | Give up connecting / waiting for a frame, then reconnect |
+| `CC_RECONNECT_DELAY_S` / `CC_RECONNECT_MAX_DELAY_S` | `2` / `30` | First retry delay, and the cap for exponential backoff |
+
+### Licensing note on detectors
+
+Ultralytics YOLO is **AGPL-3.0**, so using it in a network service obliges you to publish your
+source, unless you hold an Ultralytics enterprise license. RF-DETR is **Apache-2.0**. Set
+`CC_DETECTOR=rfdetr` if that matters for your deployment.
+
+## Development
+
+```bash
+cd backend && uv run pytest && uv run ruff check . && uv run ruff format --check .
+cd frontend && npm run lint && npm run typecheck && npm test && npm run build
+```
+
+`CC_RUN_MODEL_TESTS=1 uv run --extra yolo --extra rfdetr pytest tests/test_detectors.py`
+also runs both real models against a sample image.
+
+Source tests run against real local servers: MJPEG and snapshot cameras (Basic/Digest),
+HLS from `ffmpeg`, and password-protected RTSP from [MediaMTX](https://mediamtx.org)
+(`brew install mediamtx ffmpeg`). Tests skip automatically when those tools are missing.
+
+The schema is managed with Alembic and migrated automatically on startup. After changing the
+models, create a migration with `uv run alembic revision --autogenerate -m "…"` in `backend/`.
+
+### Security notes
+
+Camera sources are opened by the server, so a user can point one at any URL or file the server
+can reach (including through **Test connection** and ONVIF lookups). Publish links work like
+stream keys: anyone holding one can stream to that camera until it's replaced. That's fine for a self-hosted tool where every user is trusted. Restrict sources
+before exposing sign-up to the public internet.
+
+## What changed from v1
+
+| v1 (2021) | v2 |
+|---|---|
+| TensorFlow 2.3 RC, hand-ported YOLOv4, manual Darknet weight conversion | Ultralytics YOLO26 or RF-DETR, weights auto-download |
+| Per-frame counts; boxes had to be fully inside a rectangle | ByteTrack IDs, unique-visitor counts, polygon zones on foot position |
+| Flask + MongoDB, analytics never persisted | FastAPI + SQLAlchemy, per-minute history |
+| Threads killed via `ctypes`, busy-wait loops | Cooperative stop events, condition variables |
+| Werkzeug debugger exposed on LAN, hard-coded secret, unauthenticated GET-deletes | Auth on every route, ownership checks, httpOnly cookies |
+| Hard-coded `http://<ip>:8080/video` (Android IP Webcam app), 720×480 | Any RTSP/RTMP/SRT/HLS/MJPEG/snapshot camera, ONVIF discovery, phone publishing without an app; resolution-independent zones |
+| No tests, no CI | pytest + Vitest, ruff, ESLint, GitHub Actions, Docker |

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Runtime data
+backend/models/
+backend/data/
+backend/*.db
+backend/*.db-*
+videos/
+.env
+
+# Node
+node_modules/
+dist/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+.claude/settings.local.json

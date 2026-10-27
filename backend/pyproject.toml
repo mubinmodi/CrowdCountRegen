@@ -1,0 +1,55 @@
+[project]
+name = "crowdcounting"
+version = "2.0.0"
+description = "Real-time crowd counting with zone-based tracking and live analytics"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "fastapi>=0.162",
+    "uvicorn[standard]>=0.54",
+    "sqlalchemy>=2.1",
+    "pydantic-settings>=2.16",
+    "email-validator>=2.2",
+    "pwdlib[argon2]>=0.3",
+    "pyjwt>=2.15",
+    "supervision>=0.31",
+    "opencv-python>=4.11",
+    "trackers>=2.6",
+    "numpy>=2.0",
+    "av>=19.0",
+    "httpx>=0.28",
+    "cryptography>=46",
+    "alembic>=1.20",
+]
+
+[project.optional-dependencies]
+yolo = ["ultralytics>=8.4"]
+rfdetr = ["rfdetr>=1.11"]
+postgres = ["psycopg[binary]>=3.2"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1",
+    "httpx2>=2.16",
+    "ruff>=0.17",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+# Canned SOAP responses from a fake ONVIF camera read best on one line.
+"tests/test_camera_sources_api.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
