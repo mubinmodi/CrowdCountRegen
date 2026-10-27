@@ -1,14 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ArrowLeft, Crosshair, Minus, Plus, Smartphone } from "lucide-react";
+import { Activity, ArrowLeft, Construction, Crosshair, Film, Minus, Plus, Smartphone, Users } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { PublishPanel } from "../components/PublishPanel";
 import { PageHeader } from "../components/Shell";
 import { draftFrom, SourceEditor, toSourceInput, type SourceDraft } from "../components/SourceEditor";
-import { ErrorNote, Field, Panel, StatusTag } from "../components/ui";
+import { cx, ErrorNote, Field, Panel, StatusTag } from "../components/ui";
 import { ZoneEditor } from "../components/ZoneEditor";
-import { api, type Camera, type Point } from "../lib/api";
+import { api, type Camera, type CameraMode, type Point } from "../lib/api";
+import { useAppConfig } from "../lib/config";
 import { useLive } from "../lib/live";
+
+const MODES: { mode: CameraMode; label: string; icon: typeof Users; blurb: string }[] = [
+  { mode: "occupancy", label: "Occupancy", icon: Users, blurb: "Count people in the zone; alert above a limit" },
+  { mode: "danger_zone", label: "Danger zone", icon: Construction, blurb: "Anyone entering is an intrusion and opens an incident" },
+];
 
 function StreamHealth({ camera }: { camera: Camera }) {
   const status = useLive().statuses.get(camera.id);
@@ -44,14 +50,21 @@ function StreamHealth({ camera }: { camera: Camera }) {
 function CameraForm({ camera }: { camera?: Camera }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { demo_mode: demo } = useAppConfig();
   const [name, setName] = useState(camera?.name ?? "");
+  const [mode, setMode] = useState<CameraMode>(camera?.mode ?? "occupancy");
   const [threshold, setThresholdValue] = useState<number | null>(camera?.threshold ?? null);
   const [zone, setZone] = useState<Point[] | null>(camera?.zone ?? null);
-  const [source, setSource] = useState<SourceDraft>(() => draftFrom(camera));
+  // The public demo only adds phone cameras; scenario footage can't be swapped.
+  const [source, setSource] = useState<SourceDraft>(() => draftFrom(camera, demo ? "browser" : "stream"));
+  const fixedSource = Boolean(camera?.scenario);
+  // The config may arrive after the first render; a new demo camera is always a browser one.
+  const draft: SourceDraft = demo && !camera && source.kind !== "browser" ? draftFrom(undefined, "browser") : source;
+  const danger = mode === "danger_zone";
 
   const save = useMutation({
     mutationFn: () => {
-      const input = { ...toSourceInput(source), name, threshold, zone };
+      const input = { ...(fixedSource ? {} : toSourceInput(draft)), name, threshold, zone, mode };
       return camera ? api.updateCamera(camera.id, input) : api.createCamera(input);
     },
     onSuccess: (saved) => {
@@ -63,7 +76,9 @@ function CameraForm({ camera }: { camera?: Camera }) {
   });
 
   const zoneInvalid = zone !== null && zone.length < 3;
-  const setThreshold = (n: number | null) => setThresholdValue(n && n > 0 ? n : null);
+  // Danger zones allow 0 (nobody inside); occupancy limits start at 1, below that = off.
+  const minimum = danger ? 0 : 1;
+  const setThreshold = (n: number | null) => setThresholdValue(n !== null && n >= minimum ? n : null);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     save.mutate();
@@ -78,11 +93,34 @@ function CameraForm({ camera }: { camera?: Camera }) {
               <input id="name" className="field" required maxLength={200} placeholder="Main entrance"
                 value={name} onChange={(e) => setName(e.target.value)} />
             </Field>
-            <Field label="Alert limit" htmlFor="threshold" hint="Flag the camera when more people than this are in the zone.">
+            <div>
+              <span className="eyebrow mb-1.5 block text-dim">Mode</span>
+              <div role="radiogroup" aria-label="Mode" className="grid grid-cols-2 gap-1.5">
+                {MODES.map((m) => (
+                  <button key={m.mode} type="button" role="radio" aria-checked={mode === m.mode}
+                    onClick={() => setMode(m.mode)}
+                    className={cx(
+                      "flex flex-col items-start gap-1 rounded border p-2.5 text-left transition-colors",
+                      mode === m.mode
+                        ? m.mode === "danger_zone" ? "border-hazard bg-hazard/5" : "border-signal bg-signal/5"
+                        : "border-line-strong bg-bg hover:border-dim/50",
+                    )}>
+                    <m.icon size={15} className={mode === m.mode ? (m.mode === "danger_zone" ? "text-hazard" : "text-signal") : "text-dim"} />
+                    <span className="text-[12.5px] font-medium">{m.label}</span>
+                    <span className="text-[11px] leading-snug text-mute">{m.blurb}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Field label={danger ? "People allowed inside" : "Alert limit"} htmlFor="threshold"
+              hint={danger
+                ? "Usually 0. Raise it if someone, e.g. a banksman, is meant to be in the zone."
+                : "Flag the camera when more people than this are in the zone."}>
               <div className="flex items-center gap-1.5">
                 <button type="button" className="btn-secondary h-9 w-9 px-0" aria-label="Decrease"
-                  onClick={() => setThreshold((threshold ?? 1) - 1)}><Minus size={14} /></button>
-                <input id="threshold" className="field w-24 text-center font-mono" type="number" min={1} placeholder="off"
+                  onClick={() => setThreshold((threshold ?? minimum) - 1)}><Minus size={14} /></button>
+                <input id="threshold" className="field w-24 text-center font-mono" type="number" min={minimum}
+                  placeholder={danger ? "0" : "off"}
                   value={threshold ?? ""} onChange={(e) => setThreshold(e.target.value ? Number(e.target.value) : null)} />
                 <button type="button" className="btn-secondary h-9 w-9 px-0" aria-label="Increase"
                   onClick={() => setThreshold((threshold ?? 0) + 1)}><Plus size={14} /></button>
@@ -93,7 +131,14 @@ function CameraForm({ camera }: { camera?: Camera }) {
         </Panel>
 
         <Panel title="Video source">
-          <SourceEditor draft={source} onChange={setSource} camera={camera} />
+          {fixedSource ? (
+            <p className="flex gap-2 rounded border border-line bg-bg p-3 text-sm text-dim">
+              <Film size={15} className="mt-0.5 shrink-0 text-mute" />
+              <span>{camera?.description ?? "Demo scenario playing looping sample footage."}</span>
+            </p>
+          ) : (
+            <SourceEditor draft={draft} onChange={setSource} camera={camera} kinds={demo ? ["browser"] : undefined} />
+          )}
         </Panel>
 
         <ErrorNote error={save.error} />
@@ -112,9 +157,11 @@ function CameraForm({ camera }: { camera?: Camera }) {
           </Panel>
         )}
         {camera && <StreamHealth camera={camera} />}
-        <Panel title={<span className="flex items-center gap-1.5"><Crosshair size={12} /> Counting zone</span>}>
+        <Panel title={<span className="flex items-center gap-1.5">
+          {danger ? <Construction size={12} className="text-hazard" /> : <Crosshair size={12} />} {danger ? "Danger zone" : "Counting zone"}
+        </span>}>
           {camera ? (
-            <ZoneEditor cameraId={camera.id} value={zone} onChange={setZone} />
+            <ZoneEditor cameraId={camera.id} value={zone} onChange={setZone} danger={danger} />
           ) : (
             <div className="flex aspect-video flex-col items-center justify-center gap-2 rounded border border-dashed border-line-strong bg-bg bg-grid px-8 text-center">
               <Crosshair size={22} strokeWidth={1.5} className="text-mute" />

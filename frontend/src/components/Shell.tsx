@@ -6,6 +6,7 @@ import {
   MonitorPlay,
   PanelLeftClose,
   PanelLeftOpen,
+  ShieldAlert,
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { api, type Camera } from "../lib/api";
 import { useAuthActions, useCurrentUser } from "../lib/auth";
+import { useAppConfig } from "../lib/config";
 import { LiveProvider, useLive } from "../lib/live";
 import { usePersistentState } from "../lib/storage";
 import { cx } from "./ui";
@@ -27,6 +29,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { to: "/", label: "Live wall", short: "Live", icon: MonitorPlay, end: true },
+  { to: "/incidents", label: "Incidents", short: "Incidents", icon: ShieldAlert },
   { to: "/cameras", label: "Cameras", short: "Cameras", icon: Cctv },
   { to: "/analytics", label: "Analytics", short: "Analytics", icon: ChartLine },
 ];
@@ -66,17 +69,20 @@ function Clock() {
 }
 
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const { demo_mode: demo, loaded } = useAppConfig();
   const { data: user } = useCurrentUser();
   const { logout } = useAuthActions();
   const navigate = useNavigate();
   const live = useLive();
   const cameras = useQuery({ queryKey: ["cameras"], queryFn: api.cameras });
   const { overLimit, faults } = useAlerts(cameras.data);
+  const intrusions = overLimit.filter((c) => c.mode === "danger_zone");
   const total = cameras.data?.length ?? 0;
   const online = cameras.data?.filter((c) => live.statuses.get(c.id)?.state === "running").length ?? 0;
 
   const badge: Record<string, ReactNode> = {
     "/": overLimit.length > 0 && <CountBadge tone="alert" n={overLimit.length} />,
+    "/incidents": intrusions.length > 0 && <CountBadge tone="alert" n={intrusions.length} />,
     "/cameras": faults.length > 0 && <CountBadge tone="warn" n={faults.length} />,
   };
 
@@ -148,14 +154,16 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           </span>
           {!collapsed && (
             <div className="min-w-0 flex-1 leading-tight">
-              <div className="truncate text-[12.5px]">{user?.name}</div>
-              <div className="truncate font-mono text-[10.5px] text-mute">{user?.email}</div>
+              <div className="truncate text-[12.5px]">{demo ? "Public demo" : user?.name}</div>
+              <div className="truncate font-mono text-[10.5px] text-mute">{demo ? "no sign-in needed" : user?.email}</div>
             </div>
           )}
-          <button className="btn-ghost h-8 w-8 px-0" title="Sign out" aria-label="Sign out"
-            onClick={() => logout.mutate(undefined, { onSuccess: () => navigate("/login") })}>
-            <LogOut size={15} />
-          </button>
+          {loaded && !demo && (
+            <button className="btn-ghost h-8 w-8 px-0" title="Sign out" aria-label="Sign out"
+              onClick={() => logout.mutate(undefined, { onSuccess: () => navigate("/login") })}>
+              <LogOut size={15} />
+            </button>
+          )}
         </div>
         <button onClick={onToggle}
           className="btn-ghost mt-2 h-7 w-full px-0 font-mono text-[10.5px] tracking-wider text-mute"
@@ -185,6 +193,7 @@ function initials(name?: string) {
 }
 
 function Topbar() {
+  const { demo_mode: demo, loaded } = useAppConfig();
   const location = useLocation();
   const { data: user } = useCurrentUser();
   const { logout } = useAuthActions();
@@ -203,9 +212,9 @@ function Topbar() {
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-3">
         {overLimit.length > 0 && (
-          <NavLink to="/" title={`${overLimit.length} over limit`} className="flex h-7 shrink-0 items-center gap-1.5 rounded border border-alert/50 bg-alert/10 px-2 font-mono text-[11px] whitespace-nowrap text-alert">
+          <NavLink to="/" title={`${overLimit.length} active alert${overLimit.length === 1 ? "" : "s"}`} className="flex h-7 shrink-0 items-center gap-1.5 rounded border border-alert/50 bg-alert/10 px-2 font-mono text-[11px] whitespace-nowrap text-alert">
             <TriangleAlert size={13} />
-            <span>{overLimit.length}<span className="hidden sm:inline"> OVER LIMIT</span></span>
+            <span>{overLimit.length}<span className="hidden sm:inline"> ACTIVE ALERT{overLimit.length === 1 ? "" : "S"}</span></span>
           </NavLink>
         )}
         <span className="hidden items-center gap-1.5 font-mono text-[11px] sm:flex">
@@ -213,10 +222,12 @@ function Topbar() {
           <span className={live.connected ? "text-dim" : "text-warn"}>{live.connected ? "LIVE" : "RECONNECTING"}</span>
         </span>
         <Clock />
-        <button className="btn-ghost h-8 w-8 px-0 md:hidden" aria-label={`Sign out ${user?.name ?? ""}`}
-          onClick={() => logout.mutate(undefined, { onSuccess: () => navigate("/login") })}>
-          <LogOut size={15} />
-        </button>
+        {loaded && !demo && (
+          <button className="btn-ghost h-8 w-8 px-0 md:hidden" aria-label={`Sign out ${user?.name ?? ""}`}
+            onClick={() => logout.mutate(undefined, { onSuccess: () => navigate("/login") })}>
+            <LogOut size={15} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -225,7 +236,7 @@ function Topbar() {
 function MobileTabs() {
   return (
     <nav aria-label="Main"
-      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t border-line bg-panel/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-panel/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
       {NAV.map((item) => (
         <NavLink key={item.to} to={item.to} end={item.end}
           className={({ isActive }) =>

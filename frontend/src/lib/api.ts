@@ -8,6 +8,9 @@ export interface User {
 
 export type SourceKind = "stream" | "snapshot" | "browser" | "webcam" | "file";
 
+/** occupancy: alert above a people limit. danger_zone: alert when anyone (above the limit, default 0) is inside. */
+export type CameraMode = "occupancy" | "danger_zone";
+
 export interface SourceOptions {
   rtsp_transport?: "tcp" | "udp" | "auto";
   snapshot_interval_ms?: number;
@@ -25,6 +28,9 @@ export interface Camera {
   options: SourceOptions | null;
   zone: Point[] | null;
   threshold: number | null;
+  mode: CameraMode;
+  description: string | null;
+  scenario: string | null; // demo scenario key: can be reset, not removed or re-sourced
   publish_token: string | null; // browser cameras only
   created_at: string;
 }
@@ -38,7 +44,7 @@ export interface SourceInput {
   options?: SourceOptions | null;
 }
 
-export type CameraInput = SourceInput & Partial<Pick<Camera, "name" | "zone" | "threshold">>;
+export type CameraInput = SourceInput & Partial<Pick<Camera, "name" | "zone" | "threshold" | "mode" | "description">>;
 
 export type CameraState = "starting" | "connecting" | "running" | "waiting" | "error" | "stopped";
 
@@ -62,7 +68,23 @@ export interface CameraStatus {
   stream: StreamInfo | null;
   reconnects: number;
   publisher_connected: boolean | null;
-  over_limit: boolean; // occupancy is above the camera's alert threshold (decided server-side)
+  alert_limit: number | null; // most people allowed in the zone; null = no alert
+  over_limit: boolean; // running and above alert_limit (decided server-side)
+}
+
+export interface Incident {
+  id: number;
+  camera_id: number;
+  started_at: string;
+  ended_at: string | null; // null while still in progress
+  peak: number;
+  limit: number;
+  has_snapshot: boolean;
+}
+
+export interface AppConfig {
+  demo_mode: boolean;
+  detector: string;
 }
 
 export interface ProbeResult {
@@ -156,6 +178,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
+  config: () => request<AppConfig>("GET", "/api/config"),
   me: () => request<User>("GET", "/api/auth/me"),
   login: (email: string, password: string) =>
     request<User>("POST", "/api/auth/login", { email, password }),
@@ -177,6 +200,13 @@ export const api = {
   onvifStreams: (xaddr: string, username: string, password: string) =>
     request<OnvifStreams>("POST", "/api/onvif/streams", { xaddr, username, password }),
 
+  incidents: (params: { cameraId?: number; limit?: number } = {}) => {
+    const q = new URLSearchParams({ limit: String(params.limit ?? 100) });
+    if (params.cameraId !== undefined) q.set("camera_id", String(params.cameraId));
+    return request<Incident[]>("GET", `/api/incidents?${q}`);
+  },
+  resetDemo: () => request<Camera[]>("POST", "/api/demo/reset"),
+
   analytics: (params: { cameraId?: number; hours: number }) => {
     const q = new URLSearchParams({ hours: String(params.hours) });
     if (params.cameraId !== undefined) q.set("camera_id", String(params.cameraId));
@@ -184,5 +214,8 @@ export const api = {
   },
 };
 
-export const streamUrl = (id: number) => `/api/cameras/${id}/stream.mjpg`;
+/** `small` is a 480 px stream for grid tiles; the full stream is for enlarged views. */
+export const streamUrl = (id: number, size: "full" | "small" = "full") =>
+  `/api/cameras/${id}/stream.mjpg${size === "small" ? "?size=small" : ""}`;
 export const snapshotUrl = (id: number) => `/api/cameras/${id}/snapshot.jpg`;
+export const incidentSnapshotUrl = (id: number) => `/api/incidents/${id}/snapshot.jpg`;

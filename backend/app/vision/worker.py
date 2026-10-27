@@ -13,6 +13,7 @@ import supervision as sv
 from trackers import ByteTrackTracker
 
 from app.config import Settings
+from app.vision.alerts import Mode
 from app.vision.counter import Polygon, ZoneCounter
 from app.vision.detectors import Detector
 from app.vision.sources import BrowserHub, SourceSpec
@@ -25,6 +26,10 @@ log = logging.getLogger(__name__)
 _IN_ZONE = sv.Color.from_hex("#3ee08f")
 _OUT_OF_ZONE = sv.Color.from_hex("#8b97a6")
 _ZONE = sv.Color.from_hex("#ff8a3d")
+# Danger zones: people inside are the alarm, so they are red and everyone else is neutral.
+_HAZARD = sv.Color.from_hex("#ff3b3b")
+_HAZARD_STRIPE = (0, 200, 255)  # BGR safety yellow
+_SMALL_WIDTH = 480  # second, smaller stream for the live wall's tiles
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,7 @@ class CameraConfig:
     camera_id: int
     source: SourceSpec
     zone: Polygon | None
+    mode: Mode = "occupancy"  # only changes how the zone and people are drawn
 
 
 @dataclass(frozen=True)
@@ -53,7 +59,8 @@ class CameraSnapshot:
     stream: StreamInfo | None
     reconnects: int
     publisher_connected: bool | None = None  # browser cameras only
-    over_limit: bool = False  # occupancy is above the camera's alert threshold
+    alert_limit: int | None = None  # most people allowed in the zone; None = no alert
+    over_limit: bool = False  # running, and occupancy is above alert_limit
 
     @classmethod
     def stopped(cls, camera_id: int) -> Self:
@@ -79,6 +86,7 @@ class CameraWorker(threading.Thread):
 
         self._out_lock = threading.Lock()
         self._jpeg: bytes | None = None
+        self._jpeg_small: bytes | None = None  # for grid tiles: a fraction of the bandwidth
         self._raw: np.ndarray | None = None
         self.jpeg_seq = 0
         self._occupancy = 0
@@ -126,9 +134,9 @@ class CameraWorker(threading.Thread):
             reconnects=self._reader.reconnects,
         )
 
-    def latest_jpeg(self) -> tuple[int, bytes | None]:
+    def latest_jpeg(self, small: bool = False) -> tuple[int, bytes | None]:
         with self._out_lock:
-            return self.jpeg_seq, self._jpeg
+            return self.jpeg_seq, self._jpeg_small if small else self._jpeg
 
     def snapshot_jpeg(self) -> bytes | None:
         """Latest frame without annotations, used by the zone editor."""
@@ -190,11 +198,21 @@ class CameraWorker(threading.Thread):
         ok, buf = cv2.imencode(
             ".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, self._settings.jpeg_quality]
         )
+        ok_small, buf_small = False, None
+        if w > _SMALL_WIDTH:  # smaller sources just reuse the full frame
+            small_size = (_SMALL_WIDTH, round(h * _SMALL_WIDTH / w))
+            small = cv2.resize(annotated, small_size, interpolation=cv2.INTER_AREA)
+            ok_small, buf_small = cv2.imencode(
+                ".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, self._settings.jpeg_quality]
+            )
         with self._out_lock:
             self._occupancy = result.occupancy
             self._unique_entries = self._counter.unique_entries
             if ok:
                 self._jpeg = buf.tobytes()
+                self._jpeg_small = (
+                    buf_small.tobytes() if ok_small and buf_small is not None else self._jpeg
+                )
                 self._raw = frame
                 self.jpeg_seq += 1
 
@@ -202,12 +220,16 @@ class CameraWorker(threading.Thread):
         self, frame: np.ndarray, detections: sv.Detections, in_zone: np.ndarray
     ) -> np.ndarray:
         out = frame.copy()
+        danger = self.config.mode == "danger_zone"
         polygon = self._counter.pixel_polygon((frame.shape[1], frame.shape[0]))
-        if polygon is not None:
+        if polygon is not None and danger:
+            out = _draw_hazard_zone(out, polygon, alarm=bool(in_zone.any()))
+        elif polygon is not None:
             out = sv.draw_polygon(out, polygon, color=_ZONE, thickness=2)
         if len(detections):
             thickness = sv.calculate_optimal_line_thickness((frame.shape[1], frame.shape[0]))
-            for mask, color in ((~in_zone, _OUT_OF_ZONE), (in_zone, _IN_ZONE)):
+            inside = _HAZARD if danger else _IN_ZONE
+            for mask, color in ((~in_zone, _OUT_OF_ZONE), (in_zone, inside)):
                 if mask.any():
                     out = sv.BoxAnnotator(color=color, thickness=thickness).annotate(
                         out, detections[mask]
@@ -223,3 +245,28 @@ class CameraWorker(threading.Thread):
             (238, 230, 223), 1, cv2.LINE_AA,
         )  # fmt: skip
         return out
+
+
+def _draw_hazard_zone(frame: np.ndarray, polygon: np.ndarray, alarm: bool) -> np.ndarray:
+    """A red-tinted zone with a yellow-and-black striped border, like site barrier tape."""
+    tint = frame.copy()
+    cv2.fillPoly(tint, [polygon.astype(np.int32)], _HAZARD.as_bgr())
+    out = cv2.addWeighted(tint, 0.32 if alarm else 0.16, frame, 0.68 if alarm else 0.84, 0)
+    pts = polygon.astype(np.int32)
+    thickness = max(3, frame.shape[1] // 240)
+    cv2.polylines(out, [pts], True, (20, 20, 20), thickness + 2, cv2.LINE_AA)
+    dash = thickness * 4
+    for a, b in zip(pts, np.roll(pts, -1, axis=0), strict=True):
+        length = float(np.hypot(*(b - a)))
+        for start in range(0, int(length), dash * 2):
+            p = a + (b - a) * (start / length)
+            q = a + (b - a) * (min(start + dash, length) / length)
+            cv2.line(out, tuple(p.astype(int)), tuple(q.astype(int)), _HAZARD_STRIPE, thickness)
+    top = pts[pts[:, 1].argmin()]
+    label = "DANGER ZONE"
+    (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    x = int(np.clip(top[0] - tw // 2, 4, frame.shape[1] - tw - 16))
+    y = int(np.clip(top[1] - 10, th + 10, frame.shape[0] - 4))
+    cv2.rectangle(out, (x - 6, y - th - 6), (x + tw + 6, y + 6), _HAZARD_STRIPE, -1)
+    cv2.putText(out, label, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+    return out

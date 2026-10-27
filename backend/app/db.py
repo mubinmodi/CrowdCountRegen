@@ -8,6 +8,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -62,7 +63,27 @@ class Camera(Base):
     # Polygon in normalized [0, 1] image coordinates: [[x, y], ...]. Null = whole frame.
     zone: Mapped[list[list[float]] | None] = mapped_column(JSON, nullable=True)
     threshold: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # occupancy: alert above `threshold` people. danger_zone: alert above `threshold`, which
+    # defaults to 0, so anyone entering the zone triggers it (see app.vision.alerts).
+    mode: Mapped[str] = mapped_column(String(20), default="occupancy", server_default="occupancy")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Key of the demo scenario this camera was seeded from (app.demo); None for real cameras.
+    scenario: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Incident(Base):
+    """A period during which a camera was over its alert limit."""
+
+    __tablename__ = "incidents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    peak: Mapped[int] = mapped_column(Integer)  # most people in the zone during the incident
+    limit: Mapped[int] = mapped_column(Integer)  # the alert limit at the time
+    snapshot: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # annotated JPEG
 
 
 class CountSample(Base):

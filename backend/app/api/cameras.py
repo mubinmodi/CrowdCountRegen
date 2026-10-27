@@ -4,6 +4,7 @@ import secrets
 from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import select
 
+from app.config import get_settings
 from app.crypto import decrypt, encrypt
 from app.db import Camera
 from app.deps import CurrentUser, DbSession, Manager, OwnedCamera
@@ -68,6 +69,19 @@ def _resolve_source(fields: SourceFields, current: Camera | None) -> dict:
     return values
 
 
+def _demo_forbid(message: str) -> None:
+    if get_settings().demo_mode:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, message)
+
+
+def _demo_check_source(values: dict) -> None:
+    """In the public demo the server must never connect to an address a visitor typed in
+    (that would let anyone probe its private network), so only browser cameras, which push
+    frames to us, can be added."""
+    if values["kind"] != "browser":
+        _demo_forbid("The public demo can only add phone or laptop cameras (Browser type).")
+
+
 def _apply(camera: Camera, values: dict) -> None:
     for column, value in values.items():
         setattr(camera, column, value)
@@ -85,8 +99,27 @@ def list_cameras(user: CurrentUser, db: DbSession) -> list[Camera]:
 
 @router.post("", response_model=CameraOut, status_code=status.HTTP_201_CREATED)
 def create_camera(body: CameraIn, user: CurrentUser, db: DbSession, manager: Manager) -> Camera:
-    camera = Camera(owner_id=user.id, name=body.name, zone=body.zone, threshold=body.threshold)
-    _apply(camera, _resolve_source(body, None))
+    values = _resolve_source(body, None)
+    settings = get_settings()
+    if settings.demo_mode:
+        _demo_check_source(values)
+        browsers = db.scalars(
+            select(Camera.id).where(Camera.owner_id == user.id, Camera.kind == "browser")
+        ).all()
+        if len(browsers) >= settings.demo_max_browser_cameras:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "The demo already has as many phone cameras as it allows; remove one first.",
+            )
+    camera = Camera(
+        owner_id=user.id,
+        name=body.name,
+        zone=body.zone,
+        threshold=body.threshold,
+        mode=body.mode,
+        description=body.description,
+    )
+    _apply(camera, values)
     db.add(camera)
     db.commit()
     manager.upsert(camera)
@@ -102,6 +135,7 @@ def probe_source(body: ProbeIn, user: CurrentUser, db: DbSession, manager: Manag
         if current is None or current.owner_id != user.id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Camera not found")
     values = _resolve_source(body, current)
+    _demo_check_source(values)
 
     if values["kind"] == "browser":
         if current is None or current.kind != "browser":
@@ -149,14 +183,20 @@ def update_camera(
     body: CameraPatch, camera: OwnedCamera, db: DbSession, manager: Manager
 ) -> Camera:
     given = body.model_fields_set
-    for field in ("name", "zone", "threshold"):
+    for field in ("name", "zone", "threshold", "mode", "description"):
         if field in given:
             value = getattr(body, field)
-            if value is None and field == "name":
-                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "name cannot be null")
+            if value is None and field in ("name", "mode"):
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT, f"{field} cannot be null"
+                )
             setattr(camera, field, value)
     if given & set(SourceFields.model_fields):
-        _apply(camera, _resolve_source(body, camera))
+        if camera.scenario:
+            _demo_forbid("Demo scenarios play fixed sample footage; their source can't change.")
+        values = _resolve_source(body, camera)
+        _demo_check_source(values)
+        _apply(camera, values)
     db.commit()
     manager.upsert(camera)
     return camera
@@ -174,6 +214,8 @@ def rotate_publish_token(camera: OwnedCamera, db: DbSession) -> Camera:
 
 @router.delete("/{camera_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_camera(camera: OwnedCamera, db: DbSession, manager: Manager) -> None:
+    if camera.scenario:
+        _demo_forbid("Demo scenarios can't be removed; use Reset scenarios to undo changes.")
     manager.remove(camera.id, persist=False)
     db.delete(camera)
     db.commit()

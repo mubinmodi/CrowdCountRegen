@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     detector: Literal["ultralytics", "rfdetr", "fake"] = "ultralytics"
     detector_model: str = ""  # empty = backend default (models/yolo26n.pt / RF-DETR "nano")
     confidence: float = 0.4
+    # Ultralytics inference size. 640 is the model default; wide shots with small, distant
+    # people (a plaza from above) need 1280, which a GPU handles easily.
+    detector_imgsz: int = 640
     device: str | None = None  # e.g. "cpu", "cuda:0", "mps"; None = auto
 
     # Camera workers
@@ -35,6 +38,24 @@ class Settings(BaseSettings):
 
     # Analytics: counts are aggregated per minute in memory and flushed on this interval
     flush_interval_s: float = 60.0
+
+    # MJPEG output rate; None = max_fps. Lower it to save bandwidth (e.g. behind a CDN).
+    stream_fps: float | None = None
+
+    # Incidents: an alert must hold this long to open one, and be clear this long to close it.
+    # Occupancy hovers around its limit, so it gets a longer clear-down: one busy spell is one
+    # incident. A danger zone closes quickly, so separate intrusions stay separate.
+    incident_open_after_s: float = 1.0
+    incident_close_after_s: float = 3.0
+    occupancy_incident_close_after_s: float = 15.0
+    incidents_kept_per_camera: int = 200
+
+    # Public demo: no login (everyone is the demo user), scenario cameras are seeded from
+    # sample videos, and only browser cameras can be added, so the server never connects to
+    # an address a visitor typed in.
+    demo_mode: bool = False
+    demo_video_dir: str = "data/demo-videos"
+    demo_max_browser_cameras: int = 4
 
     cors_origins: list[str] = ["http://localhost:5173"]
 

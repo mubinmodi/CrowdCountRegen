@@ -22,6 +22,7 @@ RUN useradd --create-home app && mkdir -p /data /app/models && chown -R app /dat
 USER app
 
 ENV CC_DATABASE_URL=sqlite:////data/crowdcounting.db \
+    CC_DEMO_VIDEO_DIR=/data/demo-videos \
     PATH="/app/.venv/bin:$PATH"
 VOLUME ["/data", "/app/models"]
 EXPOSE 8000

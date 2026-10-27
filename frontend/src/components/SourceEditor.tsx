@@ -27,9 +27,9 @@ export interface SourceDraft {
   options: SourceOptions;
 }
 
-export function draftFrom(camera?: Camera): SourceDraft {
+export function draftFrom(camera?: Camera, defaultKind: SourceKind = "stream"): SourceDraft {
   return {
-    kind: camera?.kind ?? "stream",
+    kind: camera?.kind ?? defaultKind,
     source: camera && camera.kind !== "browser" ? camera.source : "",
     username: camera?.username ?? "",
     password: "",
@@ -174,9 +174,11 @@ export function SourceEditor({
   draft,
   onChange,
   camera,
+  kinds,
 }: {
   draft: SourceDraft;
   onChange: (d: SourceDraft) => void;
+  kinds?: SourceKind[]; // limit the choice, e.g. browser-only in the public demo
   camera?: Camera;
 }) {
   const [builderOpen, setBuilderOpen] = useState(false);
@@ -198,7 +200,7 @@ export function SourceEditor({
       <div>
         <span className="eyebrow mb-1.5 block text-dim">Source type</span>
         <div role="radiogroup" aria-label="Source type" className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-          {KINDS.map((k) => (
+          {KINDS.filter((k) => !kinds || kinds.includes(k.kind)).map((k) => (
             <button key={k.kind} type="button" role="radio" aria-checked={draft.kind === k.kind}
               onClick={() => {
                 test.reset();

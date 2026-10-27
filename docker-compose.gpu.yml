@@ -1,0 +1,28 @@
+# NVIDIA GPU override, used by the AWS deployment (see docs/deployment-aws.md) and on any
+# Linux host with the NVIDIA driver and nvidia-container-toolkit installed:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#
+# Needs Docker Compose >= 2.24.4 (for `!override` and optional env_file entries).
+services:
+  backend:
+    # Hand every CC_* setting in ./.env to the backend, so new settings (CC_DEMO_MODE,
+    # CC_STREAM_FPS, ...) work without a matching line in docker-compose.yml. Values listed
+    # under `environment:` there still take precedence.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CC_DEVICE: ${CC_DEVICE:-cuda:0}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  web:
+    # Serve on the host's port 80 (the port CloudFront talks to) instead of 8080.
+    ports: !override
+      - "80:80"

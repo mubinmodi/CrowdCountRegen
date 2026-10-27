@@ -1,11 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
-import { Cctv, Crosshair, Maximize2, Plus, Smartphone, TriangleAlert, VideoOff, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Cctv, Construction, Crosshair, Info, Maximize2, Plus, RotateCcw, ShieldAlert, Smartphone, TriangleAlert, Users, VideoOff, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { PageHeader, useAlerts } from "../components/Shell";
 import { Sparkline } from "../components/Sparkline";
 import { Brackets, cx, Delta, Meter, Panel, Readout, Segmented, StatusDot, StatusTag } from "../components/ui";
 import { api, streamUrl, type Camera, type CameraStatus } from "../lib/api";
+import { useAppConfig } from "../lib/config";
+import { useCameraFrames } from "../lib/frames";
 import { useLive, valueAgo } from "../lib/live";
 import { usePersistentState } from "../lib/storage";
 import { colors, fmt } from "../lib/theme";
@@ -18,13 +20,27 @@ const GRID = {
 } as const;
 type Columns = keyof typeof GRID;
 
-/** Video viewport: the MJPEG stream when running, otherwise a status placeholder. */
+/** Grid tiles: small frames pushed over the shared frames socket. */
+function TileVideo({ camera }: { camera: Camera }) {
+  const img = useRef<HTMLImageElement>(null);
+  useCameraFrames(camera.id, img);
+  return <img ref={img} alt={`Live feed: ${camera.name}`} className="h-full w-full object-contain" />;
+}
+
+/**
+ * Video viewport: live video when running, otherwise a status placeholder. Tiles share one
+ * WebSocket of small frames; the enlarged view streams full-size MJPEG for its one camera.
+ */
 function Feed({ camera, status, large = false }: { camera: Camera; status?: CameraStatus; large?: boolean }) {
   const state = status?.state ?? "connecting";
   return (
     <div className="relative aspect-video overflow-hidden bg-bg bg-grid">
       {state === "running" ? (
-        <img src={streamUrl(camera.id)} alt={`Live feed: ${camera.name}`} className="h-full w-full object-contain" />
+        large ? (
+          <img src={streamUrl(camera.id)} alt={`Live feed: ${camera.name}`} className="h-full w-full object-contain" />
+        ) : (
+          <TileVideo camera={camera} />
+        )
       ) : (
         <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
           {state === "error" ? (
@@ -49,11 +65,39 @@ function Feed({ camera, status, large = false }: { camera: Camera; status?: Came
   );
 }
 
+/** Danger zones alert on intrusions, occupancy cameras on going over a people limit. */
+export const alertLabel = (camera: Camera) => (camera.mode === "danger_zone" ? "INTRUSION" : "OVER LIMIT");
+
+function HazardTag() {
+  return (
+    <span className="flex items-center gap-1 rounded-sm bg-hazard px-1.5 py-0.5 font-mono text-[10px] font-semibold text-black">
+      <Construction size={11} /> DANGER ZONE
+    </span>
+  );
+}
+
+/** Danger zones show clear vs. intrusion; occupancy cameras show how full the zone is. */
+function ZoneGauge({ camera, status }: { camera: Camera; status?: CameraStatus }) {
+  if (camera.mode !== "danger_zone") {
+    return <Meter value={status?.occupancy ?? 0} max={status?.alert_limit ?? camera.threshold} />;
+  }
+  const over = status?.over_limit ?? false;
+  return over ? (
+    <div className="hazard-tape h-1.5 rounded-sm" aria-label="Intrusion in progress" />
+  ) : (
+    <div className="h-1.5 rounded-sm bg-signal/50" aria-label="Zone clear" />
+  );
+}
+
 function CameraTile({ camera, status, onFocus }: { camera: Camera; status?: CameraStatus; onFocus: () => void }) {
   const over = status?.over_limit ?? false;
   const state = status?.state ?? "connecting";
+  const danger = camera.mode === "danger_zone";
+  const occupancy = status?.occupancy ?? 0;
+  const limit = status?.alert_limit ?? null;
   return (
     <article className={cx("group panel overflow-hidden", over && "animate-alarm border-alert")}>
+      {danger && <div className="hazard-tape h-1" />}
       <div className="relative">
         <button onClick={onFocus} className="block w-full cursor-zoom-in text-left" aria-label={`Open ${camera.name}`}>
           <Feed camera={camera} status={status} />
@@ -64,9 +108,10 @@ function CameraTile({ camera, status, onFocus }: { camera: Camera; status?: Came
             <span className="truncate">{camera.name.toUpperCase()}</span>
           </span>
           <span className="flex items-center gap-1.5">
+            {danger && !over && <HazardTag />}
             {over && (
               <span className="flex items-center gap-1 rounded-sm bg-alert px-1.5 py-0.5 font-mono text-[10px] font-semibold text-bg">
-                <TriangleAlert size={11} /> OVER LIMIT
+                <TriangleAlert size={11} /> {alertLabel(camera)}
               </span>
             )}
             <span className="pointer-events-auto opacity-0 transition-opacity group-hover:opacity-100">
@@ -80,12 +125,14 @@ function CameraTile({ camera, status, onFocus }: { camera: Camera; status?: Came
       <div className="border-t border-line px-3 pt-2.5 pb-3">
         <div className="flex items-end justify-between gap-3">
           <div className="flex items-baseline gap-1.5 font-mono tabular-nums">
-            <span className={cx("text-[26px] leading-none font-semibold", over && "text-alert")}>{status?.occupancy ?? 0}</span>
-            <span className="text-[12px] text-mute">{camera.threshold ? `/ ${camera.threshold}` : "in zone"}</span>
+            <span className={cx("text-[26px] leading-none font-semibold", over && "text-alert")}>{occupancy}</span>
+            <span className="text-[12px] text-mute">
+              {danger ? (over ? "in danger zone" : limit ? `in zone · ${limit} allowed` : "zone clear") : limit !== null ? `/ ${limit}` : "in zone"}
+            </span>
           </div>
           <dl className="flex gap-4 text-right font-mono text-[11px] tabular-nums">
             <div>
-              <dt className="text-mute">UNIQUE</dt>
+              <dt className="text-mute">{danger ? "ENTERED" : "UNIQUE"}</dt>
               <dd className="text-dim">{fmt.format(status?.unique_entries ?? 0)}</dd>
             </div>
             <div>
@@ -95,7 +142,7 @@ function CameraTile({ camera, status, onFocus }: { camera: Camera; status?: Came
           </dl>
         </div>
         <div className="mt-2.5">
-          <Meter value={status?.occupancy ?? 0} max={camera.threshold} />
+          <ZoneGauge camera={camera} status={status} />
         </div>
       </div>
     </article>
@@ -108,6 +155,8 @@ function FocusView({ camera, status, onClose }: { camera: Camera; status?: Camer
   const key = String(camera.id);
   const occupancy = status?.occupancy ?? 0;
   const before = valueAgo(live.history, key, 60);
+  const danger = camera.mode === "danger_zone";
+  const limit = status?.alert_limit ?? null;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -120,9 +169,10 @@ function FocusView({ camera, status, onClose }: { camera: Camera; status?: Camer
       <div className="m-auto flex max-h-full w-full max-w-7xl flex-col overflow-auto rounded-md border border-line-strong bg-panel lg:flex-row" onClick={(e) => e.stopPropagation()}>
         <div className={cx("min-w-0 flex-1", over && "shadow-[inset_0_0_0_1px_var(--color-alert)]")}>
           <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <span className="flex items-center gap-2 font-mono text-[12px] tracking-[0.1em]">
+            <span className="flex min-w-0 items-center gap-2 font-mono text-[12px] tracking-[0.1em]">
               <StatusDot state={status?.state ?? "connecting"} />
-              {camera.name.toUpperCase()}
+              <span className="truncate">{camera.name.toUpperCase()}</span>
+              {danger && <HazardTag />}
             </span>
             <button className="btn-ghost h-7 w-7 px-0 lg:hidden" onClick={onClose} aria-label="Close"><X size={15} /></button>
           </div>
@@ -136,17 +186,31 @@ function FocusView({ camera, status, onClose }: { camera: Camera; status?: Camer
           <div className="grid grid-cols-2 gap-x-4 gap-y-5 p-4">
             <Readout label="In zone" value={occupancy} tone={over ? "alert" : "default"}
               sub={<>60s <Delta value={before === null ? null : occupancy - before} /></>} />
-            <Readout label="Limit" value={camera.threshold ?? "—"} sub={camera.threshold ? `${Math.round((occupancy / camera.threshold) * 100)}% used` : "no alert set"} />
-            <Readout label="Unique" value={fmt.format(status?.unique_entries ?? 0)} sub="since start" />
+            {danger ? (
+              <Readout label="Allowed" value={limit ?? 0} tone={over ? "alert" : "signal"}
+                sub={over ? <span className="text-alert">intrusion now</span> : "zone clear"} />
+            ) : (
+              <Readout label="Limit" value={limit ?? "—"} sub={limit ? `${Math.round((occupancy / limit) * 100)}% used` : "no alert set"} />
+            )}
+            <Readout label={danger ? "Entered" : "Unique"} value={fmt.format(status?.unique_entries ?? 0)}
+              sub={danger ? "people since start" : "since start"} />
             <Readout label="FPS" value={(status?.fps ?? 0).toFixed(1)} sub={<StatusTag state={status?.state ?? "connecting"} />} />
           </div>
+          {camera.description && (
+            <p className="flex gap-2 border-t border-line px-4 py-3 text-[12.5px] leading-relaxed text-dim">
+              <Info size={14} className="mt-0.5 shrink-0 text-mute" />
+              {camera.description}
+            </p>
+          )}
           <div className="border-t border-line px-4 pt-3 pb-2">
-            <div className="eyebrow mb-1">Occupancy · last 3 min</div>
+            <div className="eyebrow mb-1">{danger ? "People in zone" : "Occupancy"} · last 3 min</div>
             <Sparkline data={live.history} dataKey={key} color={over ? colors.alert : colors.signal} height={90} />
           </div>
           <div className="mt-auto flex gap-2 border-t border-line p-4">
             <Link to={`/cameras/${camera.id}`} className="btn-secondary flex-1"><Crosshair size={14} /> Edit zone</Link>
-            <Link to={`/analytics?camera=${camera.id}`} className="btn-secondary flex-1">History</Link>
+            <Link to={danger ? `/incidents?camera=${camera.id}` : `/analytics?camera=${camera.id}`} className="btn-secondary flex-1">
+              {danger ? "Incidents" : "History"}
+            </Link>
           </div>
         </aside>
       </div>
@@ -154,7 +218,45 @@ function FocusView({ camera, status, onClose }: { camera: Camera; status?: Camer
   );
 }
 
+/** Public-demo notice: what's on the wall and how to put it back. */
+function DemoBanner() {
+  const qc = useQueryClient();
+  const reset = useMutation({
+    mutationFn: api.resetDemo,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["cameras"] }),
+  });
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded border border-info/30 bg-info/5 px-4 py-3 text-[13px]">
+      <span className="rounded-sm border border-info/50 px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-info">PUBLIC DEMO</span>
+      <p className="min-w-0 flex-1 text-dim">
+        Live detection on looping sample footage: construction danger zones and crowd occupancy. Open a camera to redraw
+        its zone or change its limit, or add your phone as a live camera.
+      </p>
+      <div className="flex gap-2">
+        <Link to="/cameras/new" className="btn-secondary h-8"><Smartphone size={14} /> Use my phone</Link>
+        <button className="btn-ghost h-8" onClick={() => reset.mutate()} disabled={reset.isPending}
+          title="Restore every scenario's zone, mode and limit">
+          <RotateCcw size={14} /> {reset.isPending ? "Resetting…" : "Reset scenarios"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function WallSection({ icon, title, sub, children }: { icon: ReactNode; title: string; sub: string; children: ReactNode }) {
+  return (
+    <section className="mt-6 first-of-type:mt-4">
+      <h2 className="mb-2.5 flex items-baseline gap-2">
+        <span className="flex items-center gap-1.5 font-mono text-[11px] tracking-[0.14em] text-dim">{icon}{title.toUpperCase()}</span>
+        <span className="text-[12px] text-mute">{sub}</span>
+      </h2>
+      {children}
+    </section>
+  );
+}
+
 export function LivePage() {
+  const { demo_mode: demo } = useAppConfig();
   const cameras = useQuery({ queryKey: ["cameras"], queryFn: api.cameras });
   const live = useLive();
   const [columns, setColumns] = usePersistentState<Columns>("cc.live.columns", 3);
@@ -168,6 +270,34 @@ export function LivePage() {
   const online = statuses.filter((st) => st?.state === "running").length;
   const ago = valueAgo(live.history, "total", 60);
   const focused = list.find((c) => c.id === focusId);
+  const statusOf = (c: Camera) => live.statuses.get(c.id);
+  const dangerCams = list.filter((c) => c.mode === "danger_zone");
+  const occupancyCams = list.filter((c) => c.mode !== "danger_zone");
+  const intrusions = dangerCams.filter((c) => statusOf(c)?.over_limit).length;
+
+  const grid = (cams: Camera[]) => (
+    <div className={cx("grid gap-3", GRID[columns])}>
+      {cams.map((camera) => (
+        <CameraTile key={camera.id} camera={camera} status={statusOf(camera)} onFocus={() => setFocusId(camera.id)} />
+      ))}
+    </div>
+  );
+
+  if (cameras.isSuccess && list.length === 0 && demo) {
+    return (
+      <>
+        <DemoBanner />
+        <div className="panel mx-auto mt-10 max-w-xl p-8 text-center">
+          <Cctv size={30} strokeWidth={1.25} className="mx-auto animate-pulse text-mute" />
+          <h1 className="mt-3 text-lg font-semibold">Preparing the demo scenarios</h1>
+          <p className="mx-auto mt-1.5 max-w-sm text-sm text-dim">
+            The server is downloading and trimming the sample footage. Cameras appear here one by one over the next
+            minute or two.
+          </p>
+        </div>
+      </>
+    );
+  }
 
   if (cameras.isSuccess && list.length === 0) {
     return (
@@ -189,7 +319,8 @@ export function LivePage() {
 
   return (
     <>
-      <PageHeader title="Live wall" description="Real-time occupancy inside each camera's counting zone.">
+      {demo && <DemoBanner />}
+      <PageHeader title="Live wall" description="Real-time occupancy and danger-zone intrusions, from each camera's zone.">
         <div className="hidden md:block">
           <Segmented label="Grid columns" value={columns} onChange={setColumns}
             options={([1, 2, 3, 4] as const).map((n) => ({ value: n, label: `${n}×` }))} />
@@ -212,7 +343,9 @@ export function LivePage() {
         </div>
         <div className="bg-panel p-4">
           <Readout label="Alerts" value={overLimit.length} tone={overLimit.length ? "alert" : "default"}
-            sub={overLimit.length ? overLimit.map((c) => c.name).join(", ") : "none active"} />
+            sub={overLimit.length
+              ? `${intrusions} intrusion${intrusions === 1 ? "" : "s"} · ${overLimit.length - intrusions} over limit`
+              : "none active"} />
         </div>
         <div className="col-span-2 bg-panel px-4 pt-3 pb-2 sm:col-span-4 2xl:col-span-1 2xl:pt-4">
           <div className="eyebrow">Total · last 3 min</div>
@@ -220,11 +353,20 @@ export function LivePage() {
         </div>
       </Panel>
 
-      <div className={cx("mt-4 grid gap-3", GRID[columns])}>
-        {list.map((camera, i) => (
-          <CameraTile key={camera.id} camera={camera} status={statuses[i]} onFocus={() => setFocusId(camera.id)} />
-        ))}
-      </div>
+      {dangerCams.length > 0 && occupancyCams.length > 0 ? (
+        <>
+          <WallSection icon={<ShieldAlert size={13} className="text-hazard" />} title="Site safety"
+            sub="Anyone inside a danger zone raises an intrusion and opens an incident.">
+            {grid(dangerCams)}
+          </WallSection>
+          <WallSection icon={<Users size={13} className="text-signal" />} title="Occupancy"
+            sub="People inside each counting zone, against its limit.">
+            {grid(occupancyCams)}
+          </WallSection>
+        </>
+      ) : (
+        <div className="mt-4">{grid(list)}</div>
+      )}
 
       {focused && (
         <FocusView camera={focused} status={live.statuses.get(focused.id)} onClose={() => setFocusId(null)} />

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -37,6 +37,7 @@ def _validate_zone(zone: list[Point] | None) -> list[Point] | None:
 
 
 SourceKind = Literal["stream", "snapshot", "webcam", "file", "browser"]
+CameraMode = Literal["occupancy", "danger_zone"]
 
 
 class SourceOptions(BaseModel):
@@ -65,7 +66,10 @@ class SourceFields(BaseModel):
 class CameraIn(SourceFields):
     name: str = Field(min_length=1, max_length=200)
     zone: list[Point] | None = None
-    threshold: int | None = Field(default=None, ge=1)
+    # Most people allowed in the zone. Occupancy: None = no alert. Danger zone: None = 0.
+    threshold: int | None = Field(default=None, ge=0)
+    mode: CameraMode = "occupancy"
+    description: str | None = Field(default=None, max_length=1000)
 
     _check_zone = field_validator("zone")(_validate_zone)
 
@@ -75,7 +79,9 @@ class CameraPatch(SourceFields):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     zone: list[Point] | None = None
-    threshold: int | None = Field(default=None, ge=1)
+    threshold: int | None = Field(default=None, ge=0)
+    mode: CameraMode | None = None
+    description: str | None = Field(default=None, max_length=1000)
 
     _check_zone = field_validator("zone")(_validate_zone)
 
@@ -92,6 +98,9 @@ class CameraOut(BaseModel):
     options: dict | None
     zone: list[Point] | None
     threshold: int | None
+    mode: CameraMode
+    description: str | None
+    scenario: str | None  # demo scenario key; such cameras can be reset but not removed
     publish_token: str | None
     created_at: datetime
 
@@ -119,7 +128,8 @@ class CameraStatus(BaseModel):
     stream: StreamInfoOut | None = None
     reconnects: int = 0
     publisher_connected: bool | None = None  # browser cameras only
-    over_limit: bool = False  # occupancy is above the camera's alert threshold
+    alert_limit: int | None = None  # most people allowed in the zone; None = no alert
+    over_limit: bool = False  # running, and occupancy is above alert_limit
 
 
 class ProbeIn(SourceFields):
@@ -157,3 +167,28 @@ class AnalyticsOut(BaseModel):
     bucket_minutes: int
     buckets: list[AnalyticsBucket]
     summary: AnalyticsSummary
+
+
+class IncidentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    camera_id: int
+    started_at: datetime
+    ended_at: datetime | None  # None while still in progress
+    peak: int
+    limit: int
+    has_snapshot: bool
+
+    @field_validator("started_at", "ended_at")
+    @classmethod
+    def _utc(cls, value: datetime | None) -> datetime | None:
+        # SQLite drops tzinfo; everything is stored in UTC, and clients need to know that.
+        return value.replace(tzinfo=UTC) if value and value.tzinfo is None else value
+
+
+class AppConfigOut(BaseModel):
+    """What the UI needs to know about this deployment before anything else."""
+
+    demo_mode: bool
+    detector: str

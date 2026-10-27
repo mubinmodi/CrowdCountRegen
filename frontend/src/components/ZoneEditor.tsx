@@ -9,13 +9,16 @@ interface Props {
   cameraId: number;
   value: Point[] | null;
   onChange: (zone: Point[] | null) => void;
+  danger?: boolean; // draw as a danger zone
 }
 
 /**
  * Draw the counting zone on a still frame from the camera. Click to add points, drag a
  * point to move it, double-click a point to remove it. No zone = count the whole frame.
  */
-export function ZoneEditor({ cameraId, value, onChange }: Props) {
+export function ZoneEditor({ cameraId, value, onChange, danger = false }: Props) {
+  const stroke = danger ? colors.alert : colors.zone;
+  const fill = danger ? "rgb(255 77 94 / 0.2)" : "rgb(255 138 61 / 0.16)";
   const points = value ?? [];
   const surface = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<number | null>(null);
@@ -67,7 +70,9 @@ export function ZoneEditor({ cameraId, value, onChange }: Props) {
       ? "FULL FRAME · click the image to start a zone"
       : incomplete
         ? `NEED ${3 - points.length} MORE POINT${points.length === 2 ? "" : "S"} TO CLOSE`
-        : `POLY·${points.length} · feet inside the zone are counted`;
+        : danger
+          ? `POLY·${points.length} · anyone whose feet enter this zone is an intrusion`
+          : `POLY·${points.length} · feet inside the zone are counted`;
 
   return (
     <div>
@@ -117,10 +122,10 @@ export function ZoneEditor({ cameraId, value, onChange }: Props) {
         )}
         <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1000 1000" preserveAspectRatio="none">
           {points.length >= 3 ? (
-            <polygon points={toSvgPoints(points, 1000, 1000)} fill="rgb(255 138 61 / 0.16)" stroke={colors.zone}
+            <polygon points={toSvgPoints(points, 1000, 1000)} fill={fill} stroke={stroke}
               strokeWidth={2} vectorEffect="non-scaling-stroke" />
           ) : (
-            <polyline points={toSvgPoints(points, 1000, 1000)} fill="none" stroke={colors.zone} strokeWidth={2}
+            <polyline points={toSvgPoints(points, 1000, 1000)} fill="none" stroke={stroke} strokeWidth={2}
               strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
           )}
         </svg>

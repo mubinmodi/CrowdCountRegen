@@ -3,6 +3,7 @@
 import time
 
 import numpy as np
+import pytest
 import supervision as sv
 
 from app.vision.detectors.fake import FakeDetector
@@ -151,3 +152,75 @@ def test_same_minute_from_restarted_worker_is_merged(client):
     assert len(rows) == 1
     r = rows[0]
     assert (r.avg_occupancy, r.peak_occupancy, r.entries, r.frames) == (2.0, 5, 3, 20)
+
+
+def test_danger_zone_intrusion_opens_and_closes_an_incident(client, video_file, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "incident_open_after_s", 0.2)
+    monkeypatch.setattr(get_settings(), "incident_close_after_s", 0.5)
+    monkeypatch.setattr(FakeDetector, "detect", two_people)
+    signup(client)
+    cam = client.post(
+        "/api/cameras", json={"name": "Pit", "source": video_file, "mode": "danger_zone"}
+    ).json()
+    status = wait_for(
+        lambda: (s := client.get(f"/api/cameras/{cam['id']}/status").json())["over_limit"] and s
+    )
+    assert status["alert_limit"] == 0  # danger zones default to nobody allowed inside
+
+    incident = wait_for(lambda: next(iter(client.get("/api/incidents").json()), None))
+    assert (incident["camera_id"], incident["ended_at"], incident["limit"]) == (cam["id"], None, 0)
+    assert incident["peak"] == 2 and incident["has_snapshot"]
+    snap = client.get(f"/api/incidents/{incident['id']}/snapshot.jpg")
+    assert snap.status_code == 200 and snap.content[:2] == b"\xff\xd8"
+
+    # Allowing two people inside clears the alert; the incident closes after the debounce.
+    client.patch(f"/api/cameras/{cam['id']}", json={"threshold": 2})
+    closed = wait_for(lambda: (i := client.get("/api/incidents").json()[0])["ended_at"] and i)
+    assert closed["id"] == incident["id"]
+
+
+def test_incidents_are_owner_scoped(client, video_file, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "incident_open_after_s", 0.2)
+    monkeypatch.setattr(FakeDetector, "detect", two_people)
+    signup(client)
+    client.post("/api/cameras", json={"name": "Pit", "source": video_file, "mode": "danger_zone"})
+    incident = wait_for(lambda: next(iter(client.get("/api/incidents").json()), None))
+
+    client.post("/api/auth/logout")
+    signup(client, "eve@example.com")
+    assert client.get("/api/incidents").json() == []
+    assert client.get(f"/api/incidents/{incident['id']}/snapshot.jpg").status_code == 404
+
+
+def test_small_stream_for_grid_tiles(client, video_file):
+    signup(client)
+    cam = client.post("/api/cameras", json={"name": "Clip", "source": video_file}).json()
+    worker = client.app.state.manager.get(cam["id"])
+    wait_for(lambda: worker.latest_jpeg()[1])
+    full, small = worker.latest_jpeg()[1], worker.latest_jpeg(small=True)[1]
+    assert small[:2] == b"\xff\xd8" and full[:2] == b"\xff\xd8"
+    with client.stream("GET", f"/api/cameras/{cam['id']}/stream.mjpg?size=small") as r:
+        assert next(r.iter_bytes()).startswith(b"--frame")
+
+
+def test_frames_socket_sends_tagged_jpegs(client, video_file):
+    signup(client)
+    cam = client.post("/api/cameras", json={"name": "Clip", "source": video_file}).json()
+    worker = client.app.state.manager.get(cam["id"])
+    wait_for(lambda: worker.latest_jpeg()[1])
+    with client.websocket_connect("/api/ws/frames") as ws:
+        message = ws.receive_bytes()
+    assert int.from_bytes(message[:4], "big") == cam["id"]
+    assert message[4:6] == b"\xff\xd8"
+
+
+def test_frames_socket_requires_login(client):
+    from starlette.websockets import WebSocketDisconnect
+
+    with pytest.raises(WebSocketDisconnect) as closed, client.websocket_connect("/api/ws/frames"):
+        pass
+    assert closed.value.code == 4401

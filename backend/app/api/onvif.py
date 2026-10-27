@@ -4,12 +4,19 @@ import sys
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.config import get_settings
 from app.deps import CurrentUser
 from app.onvif import OnvifClient, discover
 from app.vision.sources import SourceError
 from app.vision.sources.spec import split_credentials
 
 router = APIRouter(prefix="/api/onvif", tags=["onvif"])
+
+
+def _forbid_in_demo() -> None:
+    # Discovery and profile lookups make the server contact addresses on its network.
+    if get_settings().demo_mode:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "ONVIF is disabled in the public demo.")
 
 
 class DeviceOut(BaseModel):
@@ -42,6 +49,7 @@ class StreamsOut(BaseModel):
 
 @router.post("/discover", response_model=list[DeviceOut])
 def discover_devices(user: CurrentUser) -> list:
+    _forbid_in_demo()
     """Scans the server's local network for ONVIF cameras (takes ~3 seconds).
 
     Multicast doesn't cross routers or Docker bridge networks; run the backend with host
@@ -63,6 +71,7 @@ def discover_devices(user: CurrentUser) -> list:
 
 @router.post("/streams", response_model=StreamsOut)
 def device_streams(body: StreamsIn, user: CurrentUser) -> StreamsOut:
+    _forbid_in_demo()
     """Logs into an ONVIF camera and lists its media profiles with RTSP URLs."""
     client = OnvifClient(body.xaddr, body.username, body.password)
     try:

@@ -7,6 +7,7 @@ of holding a request-scoped session open for the whole stream.
 import asyncio
 import time
 from dataclasses import asdict
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import StreamingResponse
@@ -34,10 +35,14 @@ def _authorize_camera(request: Request, camera_id: int) -> None:
 
 
 @router.get("/cameras/{camera_id}/stream.mjpg")
-async def mjpeg_stream(camera_id: int, request: Request) -> StreamingResponse:
+async def mjpeg_stream(
+    camera_id: int, request: Request, size: Literal["full", "small"] = "full"
+) -> StreamingResponse:
+    """`size=small` is a 480 px wide stream for grid tiles, roughly a quarter of the bytes."""
     await asyncio.to_thread(_authorize_camera, request, camera_id)
     manager: CameraManager = request.app.state.manager
-    interval = 1.0 / get_settings().max_fps
+    settings = get_settings()
+    interval = 1.0 / (settings.stream_fps or settings.max_fps)
 
     async def frames():
         last_seq = -1
@@ -45,7 +50,7 @@ async def mjpeg_stream(camera_id: int, request: Request) -> StreamingResponse:
         while (worker := manager.get(camera_id)) is not None:
             if await request.is_disconnected():
                 break
-            seq, jpeg = worker.latest_jpeg()
+            seq, jpeg = worker.latest_jpeg(small=size == "small")
             if jpeg is not None and seq != last_seq:
                 last_seq = seq
                 yield (
@@ -70,6 +75,43 @@ def _camera_ids_for(websocket: WebSocket) -> list[int] | None:
         if user is None:
             return None
         return list(db.scalars(select(Camera.id).where(Camera.owner_id == user.id)))
+
+
+@router.websocket("/ws/frames")
+async def frames(websocket: WebSocket, size: Literal["full", "small"] = "small") -> None:
+    """Every camera's latest annotated frame over one socket, for the live wall.
+
+    Each binary message is a 4-byte big-endian camera id followed by a JPEG. One socket for
+    all tiles sidesteps the browser's six-connections-per-host limit on HTTP/1.1, which a
+    wall of long-lived MJPEG responses would exhaust (stalling every other request). Only
+    the newest frame is ever sent, so a slow client gets fewer frames, not a backlog.
+    """
+    camera_ids = await asyncio.to_thread(_camera_ids_for, websocket)
+    if camera_ids is None:
+        await websocket.close(code=4401, reason="Not authenticated")
+        return
+    await websocket.accept()
+    manager: CameraManager = websocket.app.state.manager
+    settings = get_settings()
+    interval = 1.0 / (settings.stream_fps or settings.max_fps)
+    sent: dict[int, int] = {}
+    refreshed_at = time.monotonic()
+    try:
+        while True:
+            if time.monotonic() - refreshed_at > _REFRESH_CAMERAS_S:
+                camera_ids = await asyncio.to_thread(_camera_ids_for, websocket) or []
+                refreshed_at = time.monotonic()
+            for camera_id in camera_ids:
+                worker = manager.get(camera_id)
+                if worker is None:
+                    continue
+                seq, jpeg = worker.latest_jpeg(small=size == "small")
+                if jpeg is not None and sent.get(camera_id) != seq:
+                    sent[camera_id] = seq
+                    await websocket.send_bytes(camera_id.to_bytes(4, "big") + jpeg)
+            await asyncio.sleep(interval)
+    except (WebSocketDisconnect, RuntimeError):  # RuntimeError: sent after the client left
+        pass
 
 
 @router.websocket("/ws/live")

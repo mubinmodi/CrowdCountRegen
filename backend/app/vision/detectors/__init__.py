@@ -38,7 +38,10 @@ def build_detector(settings: Settings) -> Detector:
             from app.vision.detectors.ultralytics import UltralyticsDetector
 
             inner: Detector = UltralyticsDetector(
-                settings.detector_model or "models/yolo26n.pt", settings.confidence, settings.device
+                settings.detector_model or "models/yolo26n.pt",
+                settings.confidence,
+                settings.device,
+                settings.detector_imgsz,
             )
         case "rfdetr":
             from app.vision.detectors.rfdetr import RFDETRDetector

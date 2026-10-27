@@ -12,6 +12,7 @@ export const colors = {
   alert: "#ff4d5e",
   info: "#4cc3ff",
   zone: "#ff8a3d",
+  hazard: "#ffc400",
 } as const;
 
 export const chartAxis = {

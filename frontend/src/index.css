@@ -21,6 +21,7 @@
   --color-alert: #ff4d5e;
   --color-info: #4cc3ff;
   --color-zone: #ff8a3d;
+  --color-hazard: #ffc400; /* danger zones: safety yellow, as on site barrier tape */
 
   --animate-blink: blink 1.2s steps(2, start) infinite;
   --animate-alarm: alarm 1.6s ease-in-out infinite;
@@ -92,4 +93,9 @@
 
 @utility field {
   @apply h-9 w-full rounded border border-line-strong bg-bg px-3 text-[13px] text-ink transition-colors placeholder:text-mute hover:border-dim/40 focus:border-signal focus:outline-none;
+}
+
+/* Yellow-and-black barrier tape, for danger-zone cameras. */
+.hazard-tape {
+  background: repeating-linear-gradient(-45deg, var(--color-hazard) 0 10px, #111 10px 20px);
 }

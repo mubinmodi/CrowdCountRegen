@@ -1,7 +1,12 @@
 # CrowdCounting
 
 Real-time people counting for IP cameras, with per-camera counting zones, tracking-based
-unique-visitor counts, threshold alerts, and live + historical analytics.
+unique-visitor counts, construction-site danger zones, an incident log, and live and
+historical analytics.
+
+**Try the demo:** `CC_DEMO_MODE=true` opens straight onto seven live scenarios (road works,
+an excavator's swing radius, an excavation edge, a plaza, a metro platform, a store aisle and
+a lobby) with no login. See [docs/demo.md](docs/demo.md).
 
 ![demo](https://github.com/mubinmodi/Crowdcounting/assets/47493706/e1a5d00f-e6cf-4162-b5bb-e5b37161cd80)
 
@@ -22,10 +27,18 @@ original write-up is in [docs/original-project.md](docs/original-project.md).
   original project's "selective detection").
 - **Tracking**: ByteTrack (from Roboflow [`trackers`](https://github.com/roboflow/trackers))
   gives each person an ID, so **unique visitors** are counted once, not once per frame.
-- **Live dashboard**: annotated MJPEG video per camera, current occupancy, threshold alerts
-  and a rolling chart, pushed over a WebSocket.
+- **Danger zones**: the same zone counting with a different rule: anyone inside (or more
+  than an allowed number, e.g. a banksman) is an **intrusion**. Danger-zone cameras are drawn
+  as barrier tape, with intruders boxed in red.
+- **Incidents**: alerts become debounced incidents with a start, an end, a peak, and the
+  annotated frame that triggered them. Debouncing filters out one-frame false detections and
+  momentary occlusions.
+- **Live dashboard**: annotated video per camera (all tiles over one WebSocket, full MJPEG
+  for an enlarged view), current occupancy, alerts and a rolling chart.
 - **Analytics**: occupancy (average/peak) and visitor entries stored per minute, browsable
   over 1 hour to 30 days, per camera or combined.
+- **Public demo mode**: no login, seeded scenarios, and only push sources (phone cameras),
+  so the server never connects to an address a visitor typed in.
 - **Accounts**: Argon2-hashed passwords, httpOnly session cookies, and every camera, stream
   and statistic scoped to its owner.
 
@@ -36,9 +49,18 @@ frontend/  React 19 + TypeScript + Vite + Tailwind 4, TanStack Query, Recharts
 backend/   FastAPI · SQLAlchemy 2 (SQLite by default, Postgres optional)
            app/vision/sources/     one module per source type + reader with reconnect/backoff
            app/vision/worker.py    one thread per camera: detect → track → count → annotate
-           app/vision/manager.py   worker lifecycle + per-minute persistence of counts
+           app/vision/alerts.py    alert limits per mode + the incident state machine (pure)
+           app/vision/manager.py   worker lifecycle, status snapshots, counts, incident monitor
            app/vision/detectors/   ultralytics.py · rfdetr.py · fake.py (no-ML, for tests)
+           app/demo.py             demo scenarios: footage download/trim, seeding, reset
+infra/     AWS CDK (Python): one GPU instance behind CloudFront
+docs/      architecture.md (system design) · adr/ · demo.md · deployment-aws.md
 ```
+
+The full system design, with diagrams, the concurrency model, measured performance, failure
+modes, the security model and a multi-node scaling path, is in
+[docs/architecture.md](docs/architecture.md), with the decisions behind it in
+[docs/adr/](docs/adr/).
 
 All cameras share one detector instance. Inference is serialized with a lock, which on a
 single GPU is about as fast as running in parallel. Each camera runs at most `CC_MAX_FPS`
@@ -52,7 +74,7 @@ Requirements: Python 3.12–3.13 with [uv](https://docs.astral.sh/uv/), and Node
 # 1. Backend (http://localhost:8000, API docs at /docs)
 cd backend
 uv sync --extra yolo          # or --extra rfdetr, or both
-uv run python -m app.seed     # optional: demo account + sample video camera
+uv run python -m app.seed     # optional: demo account + 7 scenario cameras (downloads ~280 MB)
 uv run uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3
 ```
 
@@ -63,8 +85,9 @@ npm install
 npm run dev
 ```
 
-The seed script creates `demo@example.com` / `demo-password` with a camera playing
-Roboflow's public "people walking" clip. Model weights download automatically on first use:
+The seed script creates `demo@example.com` / `demo-password` with the seven demo scenario
+cameras ([docs/demo.md](docs/demo.md)), downloading and trimming their clips on first run.
+Add `CC_DEMO_MODE=true` to skip the login entirely. Model weights download automatically on first use:
 YOLO weights go to `backend/models/` and RF-DETR weights to `~/.roboflow/`.
 
 ## Camera sources
@@ -130,9 +153,15 @@ Environment variables (or `backend/.env`; see [`backend/.env.example`](backend/.
 | `CC_DETECTOR` | `ultralytics` | `ultralytics`, `rfdetr`, or `fake` |
 | `CC_DETECTOR_MODEL` | `models/yolo26n.pt` / `nano` | Ultralytics weights name/path, or RF-DETR size (`nano`…`large`) |
 | `CC_CONFIDENCE` | `0.4` | Minimum detection confidence |
+| `CC_DETECTOR_IMGSZ` | `640` | Ultralytics inference size; 1280 finds small, distant people (the demo uses it) |
 | `CC_DEVICE` | auto | `cpu`, `cuda:0`, `mps` |
 | `CC_MAX_FPS` | `15` | Processing cap per camera |
 | `CC_FRAME_WIDTH` | `960` | Frames are downscaled to this width |
+| `CC_STREAM_FPS` | `CC_MAX_FPS` | Live video output rate; lower it to save bandwidth |
+| `CC_INCIDENT_OPEN_AFTER_S` | `1` | An alert must hold this long to open an incident |
+| `CC_INCIDENT_CLOSE_AFTER_S` / `CC_OCCUPANCY_INCIDENT_CLOSE_AFTER_S` | `3` / `15` | Clear this long to close a danger-zone / occupancy incident |
+| `CC_DEMO_MODE` | `false` | Public demo: no login, seeded scenarios, phone cameras only |
+| `CC_DEMO_VIDEO_DIR` | `data/demo-videos` | Where scenario clips are cached (`/data/demo-videos` in Docker) |
 | `CC_COOKIE_SECURE` | `false` | Set `true` behind HTTPS |
 | `CC_OPEN_TIMEOUT_S` / `CC_READ_TIMEOUT_S` | `8` / `8` | Give up connecting / waiting for a frame, then reconnect |
 | `CC_RECONNECT_DELAY_S` / `CC_RECONNECT_MAX_DELAY_S` | `2` / `30` | First retry delay, and the cap for exponential backoff |
@@ -165,7 +194,16 @@ models, create a migration with `uv run alembic revision --autogenerate -m "…"
 Camera sources are opened by the server, so a user can point one at any URL or file the server
 can reach (including through **Test connection** and ONVIF lookups). Publish links work like
 stream keys: anyone holding one can stream to that camera until it's replaced. That's fine for a self-hosted tool where every user is trusted. Restrict sources
-before exposing sign-up to the public internet.
+before exposing sign-up to the public internet. `CC_DEMO_MODE` does exactly that for the
+public demo: only phone cameras can be added, and probes and ONVIF lookups are refused
+([ADR 0006](docs/adr/0006-public-demo-mode.md)).
+
+## Deploying to AWS
+
+`infra/` deploys the public demo to one NVIDIA T4 instance behind CloudFront (HTTPS, so phone
+cameras work), with no SSH and a security group that only admits CloudFront. Steps, costs,
+prerequisites (a G-instance quota and CloudFormation access) and the security model are in
+[docs/deployment-aws.md](docs/deployment-aws.md).
 
 ## What changed from v1
 

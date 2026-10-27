@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import Camera, User, get_db
+from app.demo import demo_user
 from app.security import decode_session_token
 from app.vision.manager import CameraManager
 
@@ -12,7 +13,11 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 
 def user_from_cookies(cookies: dict[str, str], db: Session) -> User | None:
-    token = cookies.get(get_settings().session_cookie)
+    settings = get_settings()
+    if settings.demo_mode:
+        # No login in the public demo: every visitor is the shared demo user.
+        return demo_user(db)
+    token = cookies.get(settings.session_cookie)
     user_id = decode_session_token(token) if token else None
     return db.get(User, user_id) if user_id is not None else None
 
