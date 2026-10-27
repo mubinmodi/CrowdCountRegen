@@ -5,7 +5,10 @@ any camera, and CrowdCounting tells you how many people are inside it, how many 
 people have passed through, and the moment someone enters an area they must not be in. Every
 alert is kept as an incident with the frame that triggered it.
 
-![demo](https://github.com/mubinmodi/Crowdcounting/assets/47493706/e1a5d00f-e6cf-4162-b5bb-e5b37161cd80)
+[![The live demo: construction danger zones, crowd occupancy, incidents](docs/media/demo-preview.gif)](docs/media/demo.mp4)
+
+▶ **[Watch the full 70-second walkthrough](docs/media/demo.mp4)**: the welcome guide, danger-zone
+intrusions, occupancy limits, an incident with its snapshot, and changing a rule live.
 
 ## What it does
 

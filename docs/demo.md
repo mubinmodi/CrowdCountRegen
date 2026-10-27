@@ -5,6 +5,14 @@ three construction-site **danger zones** and four **occupancy** cameras. There's
 Visitors can redraw zones, change limits, switch modes and add their own phone as a live
 camera, but can't point the server at any other source ([why](adr/0006-public-demo-mode.md)).
 
+## Watch it
+
+[![The demo in 70 seconds](media/demo-preview.gif)](media/demo.mp4)
+
+[The full walkthrough](media/demo.mp4) (70 s, 1440×900) was recorded from this demo running
+locally on an Apple-silicon Mac (YOLO26n at 1280 px on the GPU, about 4–5 FPS per camera). It
+follows the walkthrough below. Captions and the cursor were added for the recording only.
+
 ## Run it locally
 
 ```bash

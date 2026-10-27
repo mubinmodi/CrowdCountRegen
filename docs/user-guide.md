@@ -110,8 +110,12 @@ owner, and nobody else can see it.
 
 On a demo deployment there's no sign-in, and everyone shares one demo account.
 
-- A banner on the live wall offers **Use my phone** (add a phone camera) and **Reset
-  scenarios** (put every scenario's zone, mode and limit back).
+- The live wall opens with a **welcome guide**: what the cameras show and five things to try
+  (watch the wall, open a camera, check the incidents, change a rule, use your phone). Hide it
+  with the arrow; it stays collapsed to a slim bar on your next visits, with **Show guide** to
+  bring it back.
+- The guide offers **Use my phone** (add a phone camera) and **Reset scenarios** (put every
+  scenario's zone, mode and limit back).
 - Only phone/browser cameras can be added, and the scenario cameras can be edited but not
   removed.
 

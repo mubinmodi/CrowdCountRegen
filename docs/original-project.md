@@ -68,6 +68,10 @@ Performance comparison with other algorithms demonstrates YOLOv4's optimal speed
 ## Conclusion:
 The developed Real-time Crowd Counting application provides live analytics and selective detection features, addressing security concerns and aiding crowd management. With its ease of setup and usability in sparse crowd scenarios, the application offers practical solutions for infrastructure improvement and security enhancement. Future iterations aim to further enhance object detection capabilities using newer versions of the YOLO framework.
 
+## The original demo
+
+![The 2021 version](https://github.com/mubinmodi/Crowdcounting/assets/47493706/e1a5d00f-e6cf-4162-b5bb-e5b37161cd80)
+
 ## What changed in version 2
 
 Version 2 (2026) is a full rewrite. The ideas carried over: per-camera counting, "selective

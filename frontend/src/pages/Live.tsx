@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cctv, Construction, Crosshair, Info, Maximize2, Pause, Plus, RotateCcw, ShieldAlert, Smartphone, TriangleAlert, Users, VideoOff, X } from "lucide-react";
+import { BookOpen, Cctv, ChevronUp, Construction, Crosshair, Info, Maximize2, Pause, Plus, RotateCcw, ShieldAlert, Smartphone, TriangleAlert, Users, VideoOff, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { PageHeader, useAlerts } from "../components/Shell";
@@ -79,7 +79,7 @@ export const alertLabel = (camera: Camera) => (camera.mode === "danger_zone" ? "
 
 function HazardTag() {
   return (
-    <span className="flex items-center gap-1 rounded-sm bg-hazard px-1.5 py-0.5 font-mono text-[10px] font-semibold text-black">
+    <span className="flex shrink-0 items-center gap-1 rounded-sm bg-hazard px-1.5 py-0.5 font-mono text-[10px] font-semibold whitespace-nowrap text-black">
       <Construction size={11} /> DANGER ZONE
     </span>
   );
@@ -227,28 +227,111 @@ function FocusView({ camera, status, onClose }: { camera: Camera; status?: Camer
   );
 }
 
-/** Public-demo notice: what's on the wall and how to put it back. */
-function DemoBanner() {
+const GUIDE: { title: string; body: ReactNode }[] = [
+  {
+    title: "Watch the wall",
+    body: (
+      <>
+        <b className="font-medium text-ink">Site safety</b> cameras raise an <b className="font-medium text-alert">INTRUSION</b> the
+        moment someone steps into their danger zone. <b className="font-medium text-ink">Occupancy</b> cameras count the people in
+        their zone against a limit.
+      </>
+    ),
+  },
+  { title: "Open a camera", body: "Click any tile for full-size video, live counts, its limit and a 3-minute chart." },
+  {
+    title: "Check the incidents",
+    body: (
+      <>
+        <Link to="/incidents" className="text-info hover:underline">Incidents</Link> keeps every alert with how long it lasted,
+        its peak, and the frame that triggered it.
+      </>
+    ),
+  },
+  {
+    title: "Change a rule",
+    body: (
+      <>
+        On <Link to="/cameras" className="text-info hover:underline">Cameras</Link>, open one to switch its mode, change its
+        limit or redraw its zone. It applies right away.
+      </>
+    ),
+  },
+  {
+    title: "Go live with your phone",
+    body: "Use my phone gives you a QR code. Scan it and your phone becomes a camera: draw a danger zone and step into it.",
+  },
+];
+
+/** Public demo: what visitors are looking at and what to try. Collapses to a slim bar. */
+function DemoGuide() {
   const qc = useQueryClient();
+  const [open, setOpen] = usePersistentState("cc.demo.guide", true);
   const reset = useMutation({
     mutationFn: api.resetDemo,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["cameras"] }),
   });
-  return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded border border-info/30 bg-info/5 px-4 py-3 text-[13px]">
-      <span className="rounded-sm border border-info/50 px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-info">PUBLIC DEMO</span>
-      <p className="min-w-0 flex-1 text-dim">
-        Live detection on looping sample footage: construction danger zones and crowd occupancy. Open a camera to redraw
-        its zone or change its limit, or add your phone as a live camera.
-      </p>
-      <div className="flex gap-2">
-        <Link to="/cameras/new" className="btn-secondary h-8"><Smartphone size={14} /> Use my phone</Link>
-        <button className="btn-ghost h-8" onClick={() => reset.mutate()} disabled={reset.isPending}
-          title="Restore every scenario's zone, mode and limit">
-          <RotateCcw size={14} /> {reset.isPending ? "Resetting…" : "Reset scenarios"}
+  const actions = (
+    <div className="flex flex-wrap gap-2">
+      <Link to="/cameras/new" className="btn-secondary h-8"><Smartphone size={14} /> Use my phone</Link>
+      <button className="btn-ghost h-8" onClick={() => reset.mutate()} disabled={reset.isPending}
+        title="Restore every scenario's zone, mode and limit">
+        <RotateCcw size={14} /> {reset.isPending ? "Resetting…" : "Reset scenarios"}
+      </button>
+    </div>
+  );
+
+  if (!open) {
+    return (
+      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded border border-info/30 bg-info/5 px-4 py-2.5 text-[13px]">
+        <span className="rounded-sm border border-info/50 px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-info">PUBLIC DEMO</span>
+        <p className="min-w-0 flex-1 text-dim">Live people detection on looping sample footage.</p>
+        {actions}
+        <button className="btn-ghost h-8" onClick={() => setOpen(true)} aria-expanded={false}>
+          <BookOpen size={14} /> Show guide
         </button>
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <section aria-labelledby="demo-guide-title" className="panel mb-4 overflow-hidden border-info/30">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line bg-info/5 px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="rounded-sm border border-info/50 px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-info">PUBLIC DEMO</span>
+            <h2 id="demo-guide-title" className="text-[15px] font-semibold">Welcome to CrowdCounting</h2>
+          </div>
+          <p className="mt-1 max-w-3xl text-[13px] text-dim">
+            Seven cameras play looping sample footage while the server detects and tracks people in real time: three
+            construction-site danger zones and four crowd-occupancy scenarios. No sign-in needed. Here's what to try:
+          </p>
+        </div>
+        <button className="btn-ghost h-8 w-8 shrink-0 px-0" onClick={() => setOpen(false)}
+          aria-label="Hide guide" aria-expanded={true} title="Hide guide">
+          <ChevronUp size={16} />
+        </button>
+      </div>
+      <ol className="grid gap-px bg-line sm:grid-cols-2 xl:grid-cols-5">
+        {GUIDE.map((step, i) => (
+          <li key={step.title} className="flex gap-3 bg-panel px-4 py-3">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-line-strong font-mono text-[11px] text-dim">
+              {i + 1}
+            </span>
+            <div className="min-w-0">
+              <h3 className="text-[13px] font-medium">{step.title}</h3>
+              <p className="mt-0.5 text-[12.5px] leading-relaxed text-dim">{step.body}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2.5">
+        <p className="text-[12px] text-mute">
+          Everyone shares this demo, so others may have changed a camera. Reset puts every scenario back.
+        </p>
+        {actions}
+      </div>
+    </section>
   );
 }
 
@@ -318,7 +401,7 @@ export function LivePage() {
   if (cameras.isSuccess && list.length === 0 && demo) {
     return (
       <>
-        <DemoBanner />
+        <DemoGuide />
         <div className="panel mx-auto mt-10 max-w-xl p-8 text-center">
           <Cctv size={30} strokeWidth={1.25} className="mx-auto animate-pulse text-mute" />
           <h1 className="mt-3 text-lg font-semibold">Preparing the demo scenarios</h1>
@@ -351,7 +434,7 @@ export function LivePage() {
 
   return (
     <>
-      {demo && <DemoBanner />}
+      {demo && <DemoGuide />}
       <VideoPauseBanner />
       <PageHeader title="Live wall" description="Real-time occupancy and danger-zone intrusions, from each camera's zone.">
         <div className="hidden md:block">
