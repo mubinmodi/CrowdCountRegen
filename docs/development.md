@@ -64,6 +64,7 @@ AWS Solutions checks, and any finding that hasn't been explicitly acknowledged f
 | `test_api.py` | Sign-up, login and sessions, camera CRUD, zone validation, and that other users' cameras are unreachable |
 | `test_demo_mode.py` | No login; only browser cameras; scenario protection and reset |
 | `test_video_limits.py` | Viewer cap, session expiry, metrics format, detector stats |
+| `test_db.py` | Upgrades keep counts and incidents (incl. a simulated future table rebuild), legacy databases get their missing migrations, the migrated schema matches the models, and writes survive database errors and races |
 | `test_detectors.py` | The real models on a sample image. Opt-in: `CC_RUN_MODEL_TESTS=1 uv run --extra yolo --extra rfdetr pytest tests/test_detectors.py` |
 
 - Tests use the **fake detector** and a temporary SQLite database (see `tests/conftest.py`).
@@ -84,8 +85,15 @@ After changing the models in `app/db.py`:
 cd backend && uv run alembic revision --autogenerate -m "what changed"
 ```
 
-Review the generated file in `app/migrations/versions/`. SQLite can't alter most columns in
-place, so migrations use batch mode.
+Review the generated file in `app/migrations/versions/`, then run `uv run pytest
+tests/test_db.py`: it fails if migrating a fresh database doesn't produce exactly the models.
+
+SQLite can't alter most columns in place, so migrations use Alembic's batch mode, which
+rebuilds a table by copying it, dropping the original and renaming the copy. With foreign keys
+on, dropping a parent table such as `cameras` would cascade-delete all its counts and incidents,
+so migrations always run through `migration_connection()` (both `init_db()` and the `alembic`
+CLI do), which turns SQLite's foreign keys off for the duration and checks referential
+integrity before committing.
 
 ## Extending it
 
