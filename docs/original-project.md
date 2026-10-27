@@ -67,3 +67,22 @@ Performance comparison with other algorithms demonstrates YOLOv4's optimal speed
 
 ## Conclusion:
 The developed Real-time Crowd Counting application provides live analytics and selective detection features, addressing security concerns and aiding crowd management. With its ease of setup and usability in sparse crowd scenarios, the application offers practical solutions for infrastructure improvement and security enhancement. Future iterations aim to further enhance object detection capabilities using newer versions of the YOLO framework.
+
+## What changed in version 2
+
+Version 2 (2026) is a full rewrite. The ideas carried over: per-camera counting, "selective
+detection" (now polygon zones), and live analytics.
+
+| v1 (2021) | v2 |
+|---|---|
+| TensorFlow 2.3 RC, hand-ported YOLOv4, manual Darknet weight conversion | Ultralytics YOLO26 or RF-DETR, weights auto-download |
+| Per-frame counts; boxes had to be fully inside a rectangle | ByteTrack IDs, unique-visitor counts, polygon zones on foot position |
+| Flask + MongoDB, analytics never persisted | FastAPI + SQLAlchemy, per-minute history |
+| Threads killed via `ctypes`, busy-wait loops | Cooperative stop events, condition variables |
+| Werkzeug debugger exposed on LAN, hard-coded secret, unauthenticated GET-deletes | Auth on every route, ownership checks, httpOnly cookies |
+| Hard-coded `http://<ip>:8080/video` (Android IP Webcam app), 720×480 | Any RTSP/RTMP/SRT/HLS/MJPEG/snapshot camera, ONVIF discovery, phone publishing without an app; resolution-independent zones |
+| No tests, no CI | pytest + Vitest, ruff, ESLint, GitHub Actions, Docker |
+
+Since then, v2 has also gained construction-site danger zones, an incident log, a no-login
+public demo, and an AWS deployment. See the [documentation](README.md).
+

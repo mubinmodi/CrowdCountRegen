@@ -1,6 +1,6 @@
 # 0007. AWS: one GPU instance behind CloudFront, immutable redeploys
 
-**Status:** Accepted. Details in [deployment-aws.md](../deployment-aws.md).
+**Status:** Accepted. Details in [aws/](../aws/README.md).
 
 ## Context
 
@@ -33,5 +33,5 @@ which seeds itself on boot. Access is through SSM Session Manager, with no SSH.
 - Redeploys take about 10–15 minutes (GPU image build and model warm-up), behind a CloudFormation
   health gate. Demo state resets on each deploy, which is fine because it reseeds itself.
 - No high availability. A status-check alarm reboots it, or stop/starts it onto new hardware.
-  Production would use the multi-node design in [architecture.md](../architecture.md#scaling-beyond-one-node).
+  Production would use the multi-node design in [Scaling beyond one node](../architecture/scaling.md).
 - The account needs a G-instance vCPU quota of at least 4, and permission to use CloudFormation.

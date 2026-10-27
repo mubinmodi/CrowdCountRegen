@@ -6,7 +6,7 @@
 # accepts it for this repository's `aws-plan` / `production` environments (see
 # infra/crowdcounting_infra/github.py). No AWS keys are stored in GitHub. The approval is
 # the `production` environment's required reviewers. One-time setup is in
-# docs/deployment-aws.md#continuous-deployment; until the role variables exist, every run
+# docs/aws/ci-cd.md; until the role variables exist, every run
 # skips both jobs.
 
 name: Deploy

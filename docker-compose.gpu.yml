@@ -1,4 +1,4 @@
-# NVIDIA GPU override, used by the AWS deployment (see docs/deployment-aws.md) and on any
+# NVIDIA GPU override, used by the AWS deployment (see docs/aws/deploy.md) and on any
 # Linux host with the NVIDIA driver and nvidia-container-toolkit installed:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build

@@ -29,7 +29,7 @@ and cameras appear on the wall as each clip becomes ready.
 
 With Docker: `CC_SECRET_KEY=$(openssl rand -hex 32)` plus the same `CC_*` variables in a `.env`
 file, then `docker compose up --build` and open http://localhost:8080. The AWS deployment is
-in [deployment-aws.md](deployment-aws.md).
+in [aws/](aws/README.md).
 
 ## Scenarios
 
@@ -77,4 +77,4 @@ supervision example videos. Clips are fetched at first boot, not stored in the r
 Things worth saying about the design: newest-frame-only handoffs everywhere, so a slow camera
 shows lower FPS but never falls behind real time; one WebSocket carries every tile, because
 seven MJPEG streams would use up the browser's six HTTP/1.1 connections; and why demo mode
-blocks URL sources (SSRF). The full write-up is in [architecture.md](architecture.md).
+blocks URL sources (SSRF). The full write-up is in [System design](architecture/README.md).

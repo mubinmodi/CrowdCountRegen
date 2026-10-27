@@ -35,4 +35,4 @@ leak and are rarely rotated.
   GitHub (who approved, which commit) and CloudTrail (which role did what).
 - The roles stack is deployed once by hand: something has to create the first trust.
 - GitHub environments and their reviewers are repository settings, not code; the setup
-  commands are in [deployment-aws.md](../deployment-aws.md#continuous-deployment).
+  commands are in [Continuous deployment](../aws/ci-cd.md#one-time-setup).

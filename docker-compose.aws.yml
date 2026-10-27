@@ -1,7 +1,7 @@
 # AWS override: ships both containers' logs to CloudWatch Logs with Docker's awslogs driver.
 # The backend also prints CloudWatch Embedded Metric Format lines (CC_METRICS=emf), which
 # CloudWatch turns into metrics as they arrive, so this is the only metrics pipeline needed.
-# Used by the AWS deployment together with docker-compose.gpu.yml (see docs/deployment-aws.md).
+# Used by the AWS deployment together with docker-compose.gpu.yml (see docs/aws/deploy.md).
 # The Docker daemon authenticates with the instance role; containers never see credentials.
 x-cloudwatch-logs: &cloudwatch-logs
   driver: awslogs

@@ -35,5 +35,5 @@ and on a single GPU, serial calls are about as fast as concurrent ones.
   `CC_DETECTOR_IMGSZ`).
 - One failure domain. Mitigated inside the process (every camera's errors are caught and
   retried), but a crash takes every camera down.
-- The way out is in [architecture.md](../architecture.md#scaling-beyond-one-node): the same
+- The way out is in [Scaling beyond one node](../architecture/scaling.md): the same
   modules with the seams moved onto the network, and batched inference instead of a lock.
