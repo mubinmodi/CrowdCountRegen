@@ -7,6 +7,7 @@ export HOME=/root
 
 APP_DIR=/opt/crowdcounting
 REGION="{{REGION}}"
+COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.aws.yml)
 PLUGIN_DIR=/usr/local/lib/docker/cli-plugins
 
 log() { echo "[crowdcounting] $*"; }
@@ -99,13 +100,24 @@ CC_DETECTOR_IMGSZ=1280
 CC_CONFIDENCE=0.3
 # Viewers reach the app over HTTPS (CloudFront), so session cookies can be Secure.
 CC_COOKIE_SECURE=true
+# Cost controls for a public URL: video is the only part whose cost grows with every viewer.
+CC_MAX_VIDEO_VIEWERS={{MAX_VIDEO_VIEWERS}}
+CC_VIDEO_SESSION_MAX_S={{VIDEO_SESSION_MAX_S}}
+CC_VIDEO_IDLE_TIMEOUT_S={{VIDEO_IDLE_TIMEOUT_S}}
+# Per-camera and fleet metrics as CloudWatch Embedded Metric Format lines on stdout, which
+# the awslogs driver (docker-compose.aws.yml) delivers to CloudWatch.
+CC_METRICS=emf
+CC_METRICS_INTERVAL_S=60
+# For docker-compose.aws.yml's logging options.
+AWS_REGION=${REGION}
+CC_LOG_GROUP={{LOG_GROUP}}
 EOF
 )
 unset secret_key
 
 # --- 5. Build and start -------------------------------------------------------------------
 cd "$APP_DIR"
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+"${COMPOSE[@]}" up -d --build
 
 # Report success to CloudFormation only once nginx answers and proxies to a healthy backend.
 for _ in $(seq 1 90); do
@@ -116,6 +128,6 @@ for _ in $(seq 1 90); do
   sleep 10
 done
 log "ERROR: app did not become healthy within 15 minutes"
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml ps || true
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml logs --tail 200 || true
+"${COMPOSE[@]}" ps || true
+"${COMPOSE[@]}" logs --tail 200 || true  # Docker keeps a local copy alongside awslogs
 exit 1

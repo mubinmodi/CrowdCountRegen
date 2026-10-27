@@ -15,7 +15,7 @@ from app.config import Settings
 from app.crypto import decrypt
 from app.db import Camera, CountSample, Incident
 from app.vision.alerts import IncidentEvent, IncidentTracker, alert_limit
-from app.vision.detectors import Detector, build_detector
+from app.vision.detectors import Detector, DetectorStats, build_detector
 from app.vision.sources import BrowserHub, SourceSpec
 from app.vision.stats import MinuteBucket
 from app.vision.worker import CameraConfig, CameraSnapshot, CameraWorker
@@ -76,6 +76,21 @@ class CameraManager:
                 self._detector = self._detector_factory(self._settings)
                 log.info("Loaded detector: %s", self._detector.name)
             return self._detector
+
+    def detector_stats(self) -> DetectorStats | None:
+        """Inference stats since the last call; None until the model has been loaded."""
+        drain = getattr(self._detector, "drain_stats", None)
+        return drain() if drain is not None else None
+
+    @property
+    def camera_ids(self) -> list[int]:
+        with self._lock:
+            return list(self._workers)
+
+    @property
+    def open_incidents(self) -> int:
+        with self._lock:
+            return len(self._open_incidents)
 
     def start(self) -> None:
         if not self._settings.start_workers:

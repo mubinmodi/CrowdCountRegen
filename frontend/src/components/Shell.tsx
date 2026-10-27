@@ -17,6 +17,7 @@ import { useAuthActions, useCurrentUser } from "../lib/auth";
 import { useAppConfig } from "../lib/config";
 import { LiveProvider, useLive } from "../lib/live";
 import { usePersistentState } from "../lib/storage";
+import { attachVideoGate } from "../lib/video";
 import { cx } from "./ui";
 
 interface NavItem {
@@ -253,6 +254,10 @@ function MobileTabs() {
 
 export function Shell() {
   const [collapsed, setCollapsed] = usePersistentState("cc.sidebar.collapsed", false);
+  const { loaded, video_idle_timeout_s: idleTimeout } = useAppConfig();
+  useEffect(() => {
+    if (loaded) attachVideoGate(idleTimeout);
+  }, [loaded, idleTimeout]);
   return (
     <LiveProvider>
       <div className="flex min-h-dvh bg-bg">

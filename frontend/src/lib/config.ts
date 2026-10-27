@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, type AppConfig } from "./api";
 
-const fallback: AppConfig = { demo_mode: false, detector: "" };
+const fallback: AppConfig = { demo_mode: false, detector: "", video_idle_timeout_s: null };
 
 /**
  * Deployment facts (e.g. demo mode) that never change while the page is open. `loaded` is

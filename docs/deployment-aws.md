@@ -84,9 +84,16 @@ All resources are tagged `Project=CrowdCounting`.
 | **S3 asset** (in the CDK bootstrap bucket) | The repo's `backend/`, `frontend/` and `docker-compose*.yml`, zipped by `cdk deploy`. This means no container registry and no push to GitHub. Excluded: `.git`, `node_modules`, `.venv`, `infra/`, `docs/`, local databases, `data/`, `models/`, tests, and the local dev TLS key. |
 | **Secrets Manager secret** | A random 64-character `CC_SECRET_KEY`, read once by the instance at first boot. |
 | **CloudFront distribution** | HTTPS for viewers (needed for phone cameras), edge caching for static assets, and a single public entry point, so the instance itself is never directly reachable. PriceClass 100 covers North America and Europe edges. |
-| **2 CloudWatch alarms** | `StatusCheckFailed_Instance` reboots the instance. `StatusCheckFailed_System` triggers an EventBridge rule that runs the AWS-owned `AWS-RestartEC2Instance` runbook (stop, then start), which moves the instance to healthy hardware. EC2's built-in CloudWatch *recover* action can't be used: it isn't supported on g4dn, because g4dn has NVMe instance-store volumes. |
+| **CloudWatch Logs** group `/crowdcounting/demo` (14 days) | Both containers log there through Docker's `awslogs` driver (`docker-compose.aws.yml`). The backend's metric lines arrive the same way. The instance role can only write streams in this one group. |
+| **SNS topic** `Alerts` (TLS-only) | Every alarm (on alarm and on recovery) and the budget notify it. `-c crowdcounting:alertEmail=you@example.com` subscribes an email; confirm the subscription email AWS sends. |
+| **4 app alarms** | On the backend's own metrics. See [Monitoring and alerts](#monitoring-and-alerts). |
+| **CloudWatch dashboard** `CrowdCounting` | Cameras, detector load, viewers, per-camera FPS and occupancy, CloudFront egress, and recent errors. The `DashboardUrl` output links to it. |
+| **AWS WAF web ACL** (CloudFront scope) | A per-IP rate limit (429 above 2,000 requests per 5 minutes), plus AWS's IP-reputation and known-bad-inputs rule groups. See [Cost and abuse controls](#cost-and-abuse-controls). |
+| **AWS Budget** `CrowdCounting-monthly` | Monthly cost budget for resources tagged `Project=CrowdCounting`; notifies at 80% of actual and 100% of forecast spend. |
+| **2 instance status alarms** | `StatusCheckFailed_Instance` reboots the instance. `StatusCheckFailed_System` triggers an EventBridge rule that runs the AWS-owned `AWS-RestartEC2Instance` runbook (stop, then start), which moves the instance to healthy hardware. EC2's built-in CloudWatch *recover* action can't be used: it isn't supported on g4dn, because g4dn has NVMe instance-store volumes. |
 | **EventBridge rule + IAM role** | Connects the host-check alarm to the restart runbook. The role can only start that runbook and stop/start this one instance. |
 | **EventBridge Scheduler pair** (optional, off by default) | Stops the instance nightly and starts it every morning. Turn it on with `-c crowdcounting:schedule=true`. |
+| **`CrowdCountingGithubDeploy` stack** (separate) | The GitHub OIDC provider and the two roles the deploy workflow assumes. See [Continuous deployment](#continuous-deployment). |
 
 ### Boot sequence (user data)
 
@@ -102,13 +109,17 @@ All resources are tagged `Project=CrowdCounting`.
 3. It downloads and unzips the app to `/opt/crowdcounting`, reads the secret, and writes
    `/opt/crowdcounting/.env` (mode 600):
    `CC_SECRET_KEY`, `CC_DEMO_MODE=true`, `CC_STREAM_FPS=8`, `CC_DEMO_VIDEO_DIR=/data/demo-videos`,
-   `CC_DEVICE=cuda:0`, `CC_DETECTOR=ultralytics`, `CC_COOKIE_SECURE=true`.
-4. It runs `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build`.
+   `CC_DEVICE=cuda:0`, `CC_DETECTOR=ultralytics`, `CC_DETECTOR_IMGSZ=1280`,
+   `CC_CONFIDENCE=0.3`, `CC_COOKIE_SECURE=true`, the video cost controls
+   (`CC_MAX_VIDEO_VIEWERS`, `CC_VIDEO_SESSION_MAX_S`, `CC_VIDEO_IDLE_TIMEOUT_S`, from CDK
+   context), `CC_METRICS=emf`, and `AWS_REGION` / `CC_LOG_GROUP` for the logging override.
+4. It runs `docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.aws.yml up -d --build`.
 5. It waits up to 15 minutes for `http://localhost/api/health` (through nginx) and then reports
    success or failure to CloudFormation with `cfn-signal`. CloudFormation waits up to
    45 minutes for that signal.
 
-`docker-compose.gpu.yml` gives the backend the GPU (`deploy.resources.reservations.devices`),
+`docker-compose.aws.yml` switches both containers to the `awslogs` log driver in non-blocking
+mode, so a slow CloudWatch never stalls the app. `docker-compose.gpu.yml` gives the backend the GPU (`deploy.resources.reservations.devices`),
 passes the whole `.env` to the backend container (`env_file`, so new `CC_*` settings need no
 change to `docker-compose.yml`), and publishes `web` on host port 80 instead of 8080. Both
 containers use `restart: unless-stopped`, so they come back after a reboot or a scheduled
@@ -138,12 +149,17 @@ stop/start.
   - **CloudFront**: create, update and delete a distribution.
   - **IAM**: create roles, policies and instance profiles, and `iam:PassRole`.
   - **EventBridge and EventBridge Scheduler**: rules and schedules.
-  - **CloudWatch**: alarms.
-  - **Lambda and CloudWatch Logs**: the custom-resource provider function.
+  - **CloudWatch**: alarms and dashboards. **CloudWatch Logs**: log groups.
+  - **SNS**: topics and subscriptions. **AWS Budgets**: budgets.
+  - **AWS WAF (wafv2)**: web ACLs in the CloudFront scope (us-east-1).
+  - **Lambda**: the custom-resource provider function.
   - **STS**: assuming the CDK bootstrap roles.
 
   An SCP that denies CloudFormation, or EC2 VPC, security-group or image calls, blocks this
   deployment no matter what IAM permissions the user has.
+- **Cost allocation tag.** For the budget to see this stack's costs, activate `Project` as a
+  user-defined cost allocation tag (Billing console → Cost allocation tags) after the first
+  deploy has tagged resources. Until then the budget reports no spend.
 - **CDK bootstrap**, once per account and region (`npx aws-cdk@2 bootstrap`, below). It
   creates the `CDKToolkit` stack: the assets bucket and the deploy roles.
 - **Local tools:** [uv](https://docs.astral.sh/uv/), Node.js 22+ (for `npx aws-cdk@2`),
@@ -157,8 +173,11 @@ cd infra
 uv sync
 npx aws-cdk@2 synth --quiet                   # offline; runs the cdk-nag AwsSolutions checks
 npx aws-cdk@2 bootstrap --profile <p>         # once per account/region
-npx aws-cdk@2 deploy --profile <p>
+npx aws-cdk@2 deploy CrowdCounting --profile <p> -c crowdcounting:alertEmail=you@example.com
 ```
+
+The app has two stacks: `CrowdCounting` (the demo) and `CrowdCountingGithubDeploy` (roles
+for [Continuous deployment](#continuous-deployment)). Name the one you mean.
 
 The first deploy takes about 20–30 minutes. Most of that is the instance building the
 backend image, which pulls about 3 GB of CUDA wheels. CloudFront deploys in parallel. When it
@@ -170,6 +189,8 @@ finishes, the stack prints these outputs:
 | `InstanceId` | |
 | `SsmSessionCommand` | `aws ssm start-session --target i-… --region us-east-1` |
 | `SecretArn` | Where `CC_SECRET_KEY` lives |
+| `AlertsTopicArn` | The SNS topic alarms and the budget publish to |
+| `DashboardUrl` | The CloudWatch dashboard |
 
 The live wall fills in over the first minute or two after boot, as the demo seeder downloads
 and trims each scenario video.
@@ -185,23 +206,36 @@ Pass these with `-c key=value`, or set them in `infra/cdk.json`:
 | `crowdcounting:timezone` | `America/New_York` | Time zone for those expressions |
 | `crowdcounting:availabilityZones` | (first 2 in the account) | e.g. `us-east-1b,us-east-1c`. The instance goes in the first one. Use this if launch fails with *"…g4dn.xlarge is not supported in your requested Availability Zone"* or *InsufficientInstanceCapacity*. |
 | `crowdcounting:amiId` | (latest DLAMI) | Pin an AMI id so a new DLAMI release doesn't replace the instance |
+| `crowdcounting:maxVideoViewers` | `40` | Concurrent video connections before visitors get "busy" (counts keep working) |
+| `crowdcounting:videoSessionMaxS` | `1800` | Video connections close after this long; the viewer clicks to resume |
+| `crowdcounting:videoIdleTimeoutS` | `600` | Browsers pause video after this long without input |
+| `crowdcounting:wafRateLimit` | `2000` | Requests per IP per 5 minutes before WAF answers 429 |
+| `crowdcounting:monthlyBudgetUsd` | `450` | The monthly budget's limit |
+| `crowdcounting:alertEmail` | (none) | Email subscribed to the alerts topic |
+| `crowdcounting:githubRepository` | `mubinmodi/CrowdCountRegen` | Repository whose workflows may assume the deploy roles |
+| `crowdcounting:githubOidcProviderArn` | (create one) | Reuse an existing GitHub OIDC provider (an account can only have one per URL) |
 
 ### Operating it
 
 ```bash
 aws ssm start-session --target <InstanceId> --region us-east-1 --profile <p>
 sudo tail -f /var/log/cloud-init-output.log                      # first-boot log
-cd /opt/crowdcounting && sudo docker compose -f docker-compose.yml -f docker-compose.gpu.yml ps
-sudo docker compose -f docker-compose.yml -f docker-compose.gpu.yml logs -f backend
+cd /opt/crowdcounting
+sudo docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.aws.yml ps
+sudo docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.aws.yml logs -f backend
 nvidia-smi                                                       # GPU in use?
 ```
+
+Logs are also in CloudWatch, without a shell:
+`aws logs tail /crowdcounting/demo --follow --profile <p>`.
 
 If the first boot fails, CloudFormation rolls back and deletes the instance. To keep a failed
 instance around for debugging, deploy with `--no-rollback`.
 
 ## Updating
 
-Make your changes in the repo, then run `npx aws-cdk@2 deploy --profile <p>` again. Any change
+Merging to `main` deploys through [Continuous deployment](#continuous-deployment). By hand:
+make your changes, then run `npx aws-cdk@2 deploy CrowdCounting --profile <p>` again. Any change
 to the included files changes the asset hash. The asset hash is part of the user data, so the
 deploy replaces the instance (immutable deploys):
 
@@ -215,13 +249,14 @@ database lives on the instance and is reseeded on boot, which is the intent for 
 newer DLAMI behind the SSM parameter also triggers a replacement on the next deploy, unless
 you pin `crowdcounting:amiId`.
 
-Use `npx aws-cdk@2 diff` to preview changes first. The deploy uploads your **working tree**
+Use `npx aws-cdk@2 diff CrowdCounting` to preview changes first. The deploy uploads your **working tree**
 (uncommitted changes included), not a git commit.
 
 ## Tearing down
 
 ```bash
-cd infra && npx aws-cdk@2 destroy --profile <p>
+cd infra && npx aws-cdk@2 destroy CrowdCounting --profile <p>
+npx aws-cdk@2 destroy CrowdCountingGithubDeploy --profile <p>   # if you set up deployment
 ```
 
 This removes everything in the stack. The secret goes into Secrets Manager's default 30-day
@@ -241,9 +276,12 @@ These are us-east-1 on-demand list prices as of late 2026. Check the
 | EBS gp3 100 GB: $0.08/GB-month (baseline 3,000 IOPS / 125 MB/s included) | $8 | $8 |
 | Public IPv4 (Elastic IP): $0.005/h, also charged while stopped | $3.65 | $3.65 |
 | Secrets Manager: 1 secret | $0.40 | $0.40 |
-| CloudWatch: 2 alarms, Lambda custom resource, Scheduler, S3 asset | < $1 | < $1 |
+| AWS WAF: web ACL $5 + 3 rules × $1 + $0.60 per million requests | ~$8 | ~$8 |
+| CloudWatch: ~40 custom metrics (4 per camera + 9 fleet) × $0.30, first 10 free; 6 alarms and 1 dashboard (within the free tier) | ~$9 | ~$9 |
+| CloudWatch Logs: ingestion $0.50/GB (metric lines are ~10 KB/min; access logs vary) | ~$1 | ~$1 |
+| SNS, Budgets (first two free), Lambda custom resource, Scheduler, S3 asset | < $1 | < $1 |
 | CloudFront: see below | $0 within free tier | $0 within free tier |
-| **Total** | **≈ $397/month** | **≈ $253/month** |
+| **Total** | **≈ $415/month** | **≈ $270/month** |
 
 **CloudFront egress** is the cost that varies with usage. The live wall streams every
 camera's 480 px frames over one WebSocket. Measured locally at about 4.5 FPS, those tiles
@@ -262,6 +300,120 @@ it) or `CC_JPEG_QUALITY`, and keep the nightly stop enabled.
 
 Spot pricing for g4dn.xlarge is usually 60–70% cheaper, but a Spot interruption would take
 the demo down. Moving to Spot is a small change if that's acceptable.
+
+## Cost and abuse controls
+
+On a public URL, the instance is a fixed cost. **CloudFront egress grows with every viewer
+watching video**, so the controls focus on video. Counts, alerts and incidents travel over
+the small status socket and are never limited.
+
+| Control | Where | What it does |
+|---|---|---|
+| Pause hidden tabs | Browser (`frontend/src/lib/video.ts`) | Video stops the moment a tab goes to the background and resumes when it's visible |
+| Idle pause | Browser, timeout from `/api/config` | After `videoIdleTimeoutS` (10 min) without input, video pauses until the next input |
+| Session limit | Server (`CC_VIDEO_SESSION_MAX_S`) | Video connections close after 30 min with code 4408. The page asks before resuming, so a tab left open on a wall screen stops costing bandwidth |
+| Viewer cap | Server (`CC_MAX_VIDEO_VIEWERS`) | Past 40 concurrent video connections, new ones get 4429 (WebSocket) or 503 (MJPEG). The page shows "at capacity" and retries after 30 s |
+| Rate limit | WAF | 429 for any IP over 2,000 requests in 5 minutes. Video and status are a few long-lived connections, so normal use is far below this |
+| Managed rules | WAF | AWS IP-reputation list (known bots, scanners) and known-bad inputs (exploit payloads) |
+| Budget | AWS Budgets | Email/SNS alert at 80% of the monthly budget, or when the forecast passes 100% |
+| Nightly stop | EventBridge Scheduler (optional) | Pay for the GPU only during demo hours |
+
+Worst case with the defaults: 40 viewers × about 2 MB/s ≈ 80 MB/s ≈ 290 GB per hour, roughly
+$25 per hour beyond the free tier. The `ViewersNearLimit` alarm and the budget exist so that
+doesn't go unnoticed; lower `maxVideoViewers` or `CC_STREAM_FPS` to cap it harder.
+
+## Monitoring and alerts
+
+The backend publishes metrics as **CloudWatch Embedded Metric Format** JSON lines on stdout
+every minute (`CC_METRICS=emf`, `backend/app/metrics.py`). The awslogs driver carries them
+into CloudWatch Logs, where CloudWatch extracts them into the `CrowdCounting` namespace. No
+SDK calls, no agent, no credentials in the container.
+
+| Metric | Dimension | Meaning |
+|---|---|---|
+| `FPS`, `Occupancy`, `Alerting`, `Reconnects` | `CameraId` | Per camera: achieved processing rate, people in the zone, whether it's over its limit, and reconnects in the last minute |
+| `Cameras`, `CamerasRunning`, `CamerasStalled`, `CamerasAlerting` | (none) | Fleet state. *Stalled* means in `error` or `connecting` |
+| `InferenceMs`, `LockWaitMs`, `Inferences` | (none) | Mean model time, mean time cameras queued for the shared model, and inferences per minute |
+| `VideoViewers`, `IncidentsOpen` | (none) | Open video connections, open incidents |
+
+| Alarm | Fires when | Usually means |
+|---|---|---|
+| `CamerasStalled` | Any camera in error/connecting for 5 min | A source is down. Check its stream health page |
+| `BackendDown` | No running camera, or no metrics, for 10 min | The backend container or instance is down. Silence is ignored when the nightly schedule is on |
+| `DetectorSaturated` | Cameras wait more than 2× the inference time for the model, for 15 min | The GPU is the bottleneck: lower `CC_MAX_FPS` or `CC_DETECTOR_IMGSZ` |
+| `ViewersNearLimit` | Video viewers ≥ 80% of the cap | A traffic spike, and visitors are about to get "busy" |
+| Instance / system status checks | EC2 health checks fail | Rebooted or restarted automatically (see above) |
+
+All of them notify the `Alerts` topic when they fire and when they recover. The dashboard
+puts these metrics next to CloudFront's request, error-rate and egress graphs and a
+Logs Insights panel of recent errors.
+
+## Continuous deployment
+
+`.github/workflows/deploy.yml` runs after **CI** passes on `main`, or by hand
+(*Actions → Deploy → Run workflow*):
+
+```
+CI passes on main → plan: cdk diff (read-only) → approval → deploy: cdk deploy → summary
+```
+
+- **No AWS keys in GitHub.** Each job asks GitHub for an OIDC token and exchanges it for a
+  1-hour session. AWS only accepts the token for this repository's `aws-plan` and
+  `production` environments.
+- **The plan role** can only assume CDK's read-only lookup role, enough for
+  `cdk diff --no-change-set`. The diff goes in the run summary, so the reviewer sees exactly
+  what they're approving.
+- **The deploy role** can only assume CDK's deploy, asset-publishing and lookup roles.
+  CloudFormation makes the changes, not the workflow.
+- **Approval** is the `production` environment's required reviewers: the deploy job waits
+  until someone approves it in GitHub.
+- **Safe rollouts.** The deploy waits for the new instance's health signal. If it never
+  arrives, CloudFormation rolls back and the old instance keeps serving. Deploys never
+  overlap (`concurrency`). To roll back a bad release, revert the commit on `main`, which
+  deploys the previous code the same way.
+
+Until the two role variables exist, the workflow skips both jobs, so it is safe to have in
+the repo before AWS is set up.
+
+### One-time setup
+
+1. Deploy the roles (by hand, once):
+
+   ```bash
+   cd infra
+   npx aws-cdk@2 deploy CrowdCountingGithubDeploy --profile <p>
+   # If the account already has a GitHub OIDC provider:
+   #   -c crowdcounting:githubOidcProviderArn=arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com
+   ```
+
+2. Create the two environments. Only `main` may use them, and `production` needs your
+   approval:
+
+   ```bash
+   me=$(gh api user --jq .id)
+   for env in aws-plan production; do
+     reviewers='[]'
+     [ "$env" = production ] && reviewers="[{\"type\": \"User\", \"id\": $me}]"
+     gh api -X PUT "repos/mubinmodi/CrowdCountRegen/environments/$env" --input - <<JSON
+   {"reviewers": $reviewers,
+    "deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
+   JSON
+     gh api -X POST "repos/mubinmodi/CrowdCountRegen/environments/$env/deployment-branch-policies" \
+       -f name=main
+   done
+   ```
+
+   (Or in GitHub: *Settings → Environments*. Add yourself as a required reviewer on
+   `production`, and limit both to the `main` branch.)
+
+3. Store the role ARNs from step 1's outputs as repository variables (they aren't secrets):
+
+   ```bash
+   gh variable set AWS_PLAN_ROLE_ARN --body <PlanRoleArn>
+   gh variable set AWS_DEPLOY_ROLE_ARN --body <DeployRoleArn>
+   ```
+
+The next merge to `main` then plans automatically and waits for your approval to deploy.
 
 ## Security model
 
@@ -284,12 +436,18 @@ the demo down. Moving to Spot is a small change if that's acceptable.
   because rotating it would invalidate sessions and stored camera passwords.
 - **Demo-mode restrictions** (`CC_DEMO_MODE=true`):
   - There's no login: every visitor is the shared demo user.
-  - The scenario cameras come from bundled sample videos.
+  - The scenario cameras play sample videos the instance downloads and trims on first boot.
   - Visitors can only add *browser* (phone/laptop) cameras, capped at
     `CC_DEMO_MAX_BROWSER_CAMERAS`. The server therefore never opens a URL, file or ONVIF
     address a visitor typed in, which closes the SSRF path described in the README's
     security notes. Everything visitors do is visible to other visitors, and the data resets
     on every redeploy.
+- **Edge protection.** AWS WAF rate-limits each IP and drops requests from AWS's
+  IP-reputation lists and known-bad input patterns before they reach the instance. See
+  [Cost and abuse controls](#cost-and-abuse-controls).
+- **Deploys without stored keys.** GitHub Actions assumes short-lived roles through OIDC,
+  trusted only for this repository's `aws-plan` and `production` environments, and the
+  production deploy needs a reviewer's approval.
 - **Licensing.** Ultralytics YOLO is AGPL-3.0, and a public demo is a network service. See
   the README's licensing note. `CC_DETECTOR=rfdetr` (Apache-2.0) avoids the issue.
 
@@ -310,7 +468,8 @@ hasn't been acknowledged fails the synth. These findings are acknowledged in
 | EC29 | Instance | Termination protection would block immutable replacement |
 | VPC7 | VPC | No flow logs for a single-instance demo |
 | CFR1 | Distribution | Public demo, no geo restriction |
-| CFR2 | Distribution | No WAF (cost). Add for production. |
+| IAM5 | Instance role | `log-stream:*` in the app's own log group (Docker names a stream per container) |
+| SNS2 | Alerts topic | No KMS encryption: alarm and budget messages aren't sensitive, and CloudWatch/Budgets can't publish to topics using the AWS-managed SNS key |
 | CFR3 | Distribution | No access logs (cost and volume from streams) |
 | CFR4 | Distribution | The default certificate can't set a minimum TLS version. A custom domain + ACM can. |
 | CFR5 | Distribution | HTTP origin, locked to CloudFront by the security group |
@@ -352,9 +511,9 @@ This stack is shaped for a cheap, always-reachable demo. For a real multi-tenant
    email, SMS, webhooks and downstream automations can subscribe.
 5. **Add Cognito** user pools for sign-up and sign-in (with MFA) instead of the demo user,
    keeping per-owner scoping in the API.
-6. **Put AWS WAF on CloudFront**: managed rule groups plus rate limiting on `/api/`. Add a
-   custom domain with an ACM certificate (TLS 1.2+ minimum) and CloudFront access logs.
-   Consider a VPC origin, so the instances have no public IP at all.
-7. **Operations:** VPC flow logs, CloudWatch agent logs and metrics from containers, backups
+6. **Edge:** a custom domain with an ACM certificate (TLS 1.2+ minimum), CloudFront access
+   logs, WAF logging, and the AWS managed common rule set tuned for the API. Consider a VPC
+   origin, so the instances have no public IP at all.
+7. **Operations:** VPC flow logs, traces (OpenTelemetry → X-Ray), backups
    (RDS snapshots), and secret rotation with a key-versioning scheme for stored camera
    passwords.

@@ -161,6 +161,9 @@ Environment variables (or `backend/.env`; see [`backend/.env.example`](backend/.
 | `CC_INCIDENT_OPEN_AFTER_S` | `1` | An alert must hold this long to open an incident |
 | `CC_INCIDENT_CLOSE_AFTER_S` / `CC_OCCUPANCY_INCIDENT_CLOSE_AFTER_S` | `3` / `15` | Clear this long to close a danger-zone / occupancy incident |
 | `CC_DEMO_MODE` | `false` | Public demo: no login, seeded scenarios, phone cameras only |
+| `CC_MAX_VIDEO_VIEWERS` | unlimited | Concurrent video connections; beyond it visitors get counts but no video |
+| `CC_VIDEO_SESSION_MAX_S` / `CC_VIDEO_IDLE_TIMEOUT_S` | off / off | Close video after this long / have browsers pause it after this long idle |
+| `CC_METRICS` | `off` | `emf`: per-camera and fleet metrics as CloudWatch Embedded Metric Format lines on stdout |
 | `CC_DEMO_VIDEO_DIR` | `data/demo-videos` | Where scenario clips are cached (`/data/demo-videos` in Docker) |
 | `CC_COOKIE_SECURE` | `false` | Set `true` behind HTTPS |
 | `CC_OPEN_TIMEOUT_S` / `CC_READ_TIMEOUT_S` | `8` / `8` | Give up connecting / waiting for a frame, then reconnect |
@@ -201,9 +204,11 @@ public demo: only phone cameras can be added, and probes and ONVIF lookups are r
 ## Deploying to AWS
 
 `infra/` deploys the public demo to one NVIDIA T4 instance behind CloudFront (HTTPS, so phone
-cameras work), with no SSH and a security group that only admits CloudFront. Steps, costs,
-prerequisites (a G-instance quota and CloudFormation access) and the security model are in
-[docs/deployment-aws.md](docs/deployment-aws.md).
+cameras work), with no SSH and a security group that only admits CloudFront. AWS WAF, a
+viewer cap and idle pausing keep a public link's cost bounded; CloudWatch gets logs, metrics,
+alarms and a dashboard; and merges to `main` deploy through GitHub Actions with OIDC roles and
+a manual approval. Steps, costs, prerequisites (a G-instance quota and CloudFormation access)
+and the security model are in [docs/deployment-aws.md](docs/deployment-aws.md).
 
 ## What changed from v1
 

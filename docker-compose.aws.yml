@@ -1,0 +1,21 @@
+# AWS override: ships both containers' logs to CloudWatch Logs with Docker's awslogs driver.
+# The backend also prints CloudWatch Embedded Metric Format lines (CC_METRICS=emf), which
+# CloudWatch turns into metrics as they arrive, so this is the only metrics pipeline needed.
+# Used by the AWS deployment together with docker-compose.gpu.yml (see docs/deployment-aws.md).
+# The Docker daemon authenticates with the instance role; containers never see credentials.
+x-cloudwatch-logs: &cloudwatch-logs
+  driver: awslogs
+  options:
+    awslogs-region: ${AWS_REGION:?AWS_REGION is written to .env by the instance bootstrap}
+    awslogs-group: ${CC_LOG_GROUP:?CC_LOG_GROUP is written to .env by the instance bootstrap}
+    awslogs-create-group: "false"
+    tag: "{{.Name}}/{{.ID}}"
+    # Never block the app on CloudWatch: buffer, and drop the oldest lines if it falls behind.
+    mode: non-blocking
+    max-buffer-size: 4m
+
+services:
+  backend:
+    logging: *cloudwatch-logs
+  web:
+    logging: *cloudwatch-logs

@@ -19,7 +19,9 @@ CC_DEMO_MODE=true CC_DETECTOR_IMGSZ=1280 CC_CONFIDENCE=0.3 CC_STREAM_FPS=8 \
 cd frontend && npm install && npm run dev     # http://localhost:5173
 ```
 
-On a Mac add `CC_DEVICE=mps` to use the GPU; expect 3–6 FPS per camera across seven cameras.
+To try the public-demo cost controls locally, add `CC_VIDEO_IDLE_TIMEOUT_S=60`
+(video pauses after a minute without input) or `CC_MAX_VIDEO_VIEWERS=0` (every viewer gets
+"at capacity" while counts keep updating). On a Mac add `CC_DEVICE=mps` to use the GPU; expect 3–6 FPS per camera across seven cameras.
 With an NVIDIA GPU, use `CC_DEVICE=cuda:0`. Without one, set `CC_DETECTOR_IMGSZ=640` and
 `CC_MAX_FPS=5` to keep up, at the cost of missing most of the plaza's distant crowd. The
 seeding step is optional: in demo mode the server does it in the background on first start,

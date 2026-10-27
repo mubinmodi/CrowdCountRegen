@@ -8,7 +8,9 @@ from app import demo
 from app.api import analytics, auth, cameras, demo_api, incidents, onvif, publish, stream
 from app.config import get_settings
 from app.db import SessionLocal, init_db
+from app.metrics import MetricsCollector, MetricsEmitter
 from app.schemas import AppConfigOut
+from app.viewers import VideoSlots
 from app.vision.manager import CameraManager
 
 log = logging.getLogger("crowdcounting")
@@ -29,13 +31,21 @@ async def lifespan(app: FastAPI):
     manager.start()
     if settings.demo_mode and settings.start_workers:
         demo.seed_in_background(settings, manager.upsert)
+    emitter = None
+    if settings.metrics == "emf":
+        collector = MetricsCollector(manager, app.state.video_slots)
+        emitter = MetricsEmitter(collector, settings.metrics_interval_s)
+        emitter.start()
     yield
+    if emitter is not None:
+        emitter.stop()
     manager.shutdown()
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="CrowdCounting", version="2.0.0", lifespan=lifespan)
+    app.state.video_slots = VideoSlots(lambda: get_settings().max_video_viewers)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -52,7 +62,11 @@ def create_app() -> FastAPI:
 
     @app.get("/api/config", response_model=AppConfigOut, tags=["meta"])
     def app_config() -> AppConfigOut:
-        return AppConfigOut(demo_mode=settings.demo_mode, detector=settings.detector)
+        return AppConfigOut(
+            demo_mode=settings.demo_mode,
+            detector=settings.detector,
+            video_idle_timeout_s=settings.video_idle_timeout_s,
+        )
 
     return app
 

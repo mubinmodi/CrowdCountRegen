@@ -369,19 +369,35 @@ after the instance itself ([estimate](deployment-aws.md#cost-estimate)).
   [ADR 0006](adr/0006-public-demo-mode.md) covers the threat model.
 - **Publish tokens** act like RTMP stream keys: 192-bit random, rotatable, and only valid for
   browser cameras.
-- **AWS.** No SSH, IMDSv2 only, the security group only admits CloudFront, and the secret
-  lives in Secrets Manager ([security model](deployment-aws.md#security-model)).
+- **Abuse and cost.** Video, the one cost that grows per viewer, pauses in hidden or idle
+  tabs, expires after 30 minutes, and is capped at a number of concurrent viewers. AWS WAF
+  rate-limits each IP and applies AWS's reputation and known-bad-input rules
+  ([ADR 0009](adr/0009-video-cost-controls-and-emf-metrics.md)).
+- **AWS.** No SSH, IMDSv2 only, the security group only admits CloudFront, the secret lives
+  in Secrets Manager, and deploys use short-lived OIDC roles behind a manual approval
+  ([ADR 0010](adr/0010-deploy-with-github-oidc-and-approval.md),
+  [security model](deployment-aws.md#security-model)).
 
 ## Observability
 
-What exists: per-camera stream health in the UI (state, error code and hint, resolution,
-codec, achieved FPS, reconnect count), structured logs for reconnects and failures,
-`GET /api/health` (used by the AWS boot health gate), and the incident log itself.
+- **In the product:** per-camera stream health in the UI (state, error code and hint,
+  resolution, codec, achieved FPS, reconnect count), and the incident log.
+- **Metrics:** with `CC_METRICS=emf`, the backend writes CloudWatch Embedded Metric Format
+  lines to stdout every minute. Per camera: FPS, occupancy, alerting and reconnects. For the
+  fleet: running/stalled/alerting cameras, open incidents, video viewers, inferences per
+  minute, mean inference time and mean **lock wait** (time queued for the shared detector).
+  Lock wait is the saturation signal: once it exceeds the inference time, cameras are
+  queuing for the GPU. Publishing through logs means no SDK, agent or credentials in the
+  container ([ADR 0009](adr/0009-video-cost-controls-and-emf-metrics.md)).
+- **Logs and alarms on AWS:** both containers log to CloudWatch through Docker's awslogs
+  driver. Alarms fire on stalled cameras, a silent backend, a saturated detector and viewers
+  near the cap, alongside the EC2 status checks, all to one SNS topic; a dashboard puts them
+  next to CloudFront egress ([details](deployment-aws.md#monitoring-and-alerts)).
+- **Health:** `GET /api/health`, which the AWS boot health gate uses before traffic moves to
+  a new instance.
 
-What production would add: Prometheus metrics (per-camera FPS, inference latency histogram,
-detector lock wait time, reconnects, WebSocket clients, flush latency) with alerts on "camera
-FPS = 0 for 5 min" and "lock wait > 50% of the frame budget". OpenTelemetry traces would show
-where a slow frame spent its time.
+Still missing for production: traces (OpenTelemetry → X-Ray) to show where a slow frame
+spends its time, and per-request latency metrics for the API.
 
 ## Scaling beyond one node
 

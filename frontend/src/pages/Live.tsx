@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cctv, Construction, Crosshair, Info, Maximize2, Plus, RotateCcw, ShieldAlert, Smartphone, TriangleAlert, Users, VideoOff, X } from "lucide-react";
+import { Cctv, Construction, Crosshair, Info, Maximize2, Pause, Plus, RotateCcw, ShieldAlert, Smartphone, TriangleAlert, Users, VideoOff, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { PageHeader, useAlerts } from "../components/Shell";
@@ -8,6 +8,7 @@ import { Brackets, cx, Delta, Meter, Panel, Readout, Segmented, StatusDot, Statu
 import { api, streamUrl, type Camera, type CameraStatus } from "../lib/api";
 import { useAppConfig } from "../lib/config";
 import { useCameraFrames } from "../lib/frames";
+import { useVideoPause, videoGate, type VideoPause } from "../lib/video";
 import { useLive, valueAgo } from "../lib/live";
 import { usePersistentState } from "../lib/storage";
 import { colors, fmt } from "../lib/theme";
@@ -33,11 +34,19 @@ function TileVideo({ camera }: { camera: Camera }) {
  */
 function Feed({ camera, status, large = false }: { camera: Camera; status?: CameraStatus; large?: boolean }) {
   const state = status?.state ?? "connecting";
+  const pause = useVideoPause();
   return (
     <div className="relative aspect-video overflow-hidden bg-bg bg-grid">
-      {state === "running" ? (
+      {state === "running" && pause ? (
+        <div className="flex h-full flex-col items-center justify-center gap-2">
+          <Pause size={large ? 26 : 18} className="text-mute" />
+          <span className="font-mono text-[11px] tracking-[0.14em] text-mute">VIDEO PAUSED</span>
+        </div>
+      ) : state === "running" ? (
         large ? (
-          <img src={streamUrl(camera.id)} alt={`Live feed: ${camera.name}`} className="h-full w-full object-contain" />
+          // 503 = the server is at its video viewer limit.
+          <img src={streamUrl(camera.id)} alt={`Live feed: ${camera.name}`} className="h-full w-full object-contain"
+            onError={() => videoGate.busy()} />
         ) : (
           <TileVideo camera={camera} />
         )
@@ -243,6 +252,29 @@ function DemoBanner() {
   );
 }
 
+const PAUSE_TEXT: Record<Exclude<VideoPause, "hidden" | null>, { text: string; action: string }> = {
+  idle: { text: "Live video paused after a while without activity, to save bandwidth.", action: "Resume video" },
+  busy: {
+    text: "The demo is at its limit for live video viewers. Video retries by itself in 30 seconds.",
+    action: "Retry now",
+  },
+  expired: { text: "Live video session ended. Counts and alerts kept updating.", action: "Resume video" },
+};
+
+/** Explains why video stopped. Counts, alerts and incidents keep updating either way. */
+function VideoPauseBanner() {
+  const pause = useVideoPause();
+  if (!pause || pause === "hidden") return null;
+  const { text, action } = PAUSE_TEXT[pause];
+  return (
+    <div role="status" className="mb-4 flex flex-wrap items-center gap-3 rounded border border-warn/40 bg-warn/5 px-4 py-3 text-[13px]">
+      <Pause size={15} className="shrink-0 text-warn" />
+      <p className="min-w-0 flex-1 text-dim">{text}</p>
+      <button className="btn-secondary h-8" onClick={() => videoGate.resume()}>{action}</button>
+    </div>
+  );
+}
+
 function WallSection({ icon, title, sub, children }: { icon: ReactNode; title: string; sub: string; children: ReactNode }) {
   return (
     <section className="mt-6 first-of-type:mt-4">
@@ -320,6 +352,7 @@ export function LivePage() {
   return (
     <>
       {demo && <DemoBanner />}
+      <VideoPauseBanner />
       <PageHeader title="Live wall" description="Real-time occupancy and danger-zone intrusions, from each camera's zone.">
         <div className="hidden md:block">
           <Segmented label="Grid columns" value={columns} onChange={setColumns}

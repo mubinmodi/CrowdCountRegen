@@ -1,4 +1,5 @@
 import { useEffect, type RefObject } from "react";
+import { videoGate } from "./video";
 
 type Listener = (url: string) => void;
 
@@ -10,8 +11,19 @@ type Listener = (url: string) => void;
  * at most six connections per host, and a wall of never-ending MJPEG responses uses them all
  * up, stalling every API call. Frames are handed straight to <img> elements, without going
  * through React state, so a wall at 8 fps doesn't re-render the page 50 times a second.
+ *
+ * The socket is only open while the video gate allows it (tab visible, viewer active, server
+ * not at capacity); the server's 4429 (busy) and 4408 (session expired) close it into those
+ * paused states instead of reconnecting straight away.
  */
 class FrameFeed {
+  constructor() {
+    videoGate.subscribe(() => {
+      if (videoGate.state !== null) this.disconnect();
+      else if (this.listeners.size > 0 && !this.socket) this.connect();
+    });
+  }
+
   private socket: WebSocket | null = null;
   private listeners = new Map<number, Set<Listener>>();
   private urls = new Map<number, string>();
@@ -26,7 +38,7 @@ class FrameFeed {
     set.add(listener);
     const last = this.urls.get(cameraId);
     if (last) listener(last);
-    if (!this.socket) this.connect();
+    if (!this.socket && videoGate.state === null) this.connect();
     return () => {
       set.delete(listener);
       if (set.size === 0) this.listeners.delete(cameraId);
@@ -52,19 +64,24 @@ class FrameFeed {
     socket.onclose = (event) => {
       if (this.socket !== socket) return;
       this.socket = null;
-      if (this.listeners.size === 0 || event.code === 4401) return;
+      if (event.code === 4429) return videoGate.busy();
+      if (event.code === 4408) return videoGate.expired();
+      if (this.listeners.size === 0 || event.code === 4401 || videoGate.state !== null) return;
       this.retry = setTimeout(() => this.connect(), Math.min(10_000, 500 * 2 ** this.attempt++));
     };
     this.socket = socket;
   }
 
+  /** Closes the socket. Tiles keep their last frame until a new one arrives. */
   private disconnect() {
     clearTimeout(this.retry);
     const socket = this.socket;
     this.socket = null;
     socket?.close();
-    this.urls.forEach((url) => URL.revokeObjectURL(url));
-    this.urls.clear();
+    if (this.listeners.size === 0) {
+      this.urls.forEach((url) => URL.revokeObjectURL(url));
+      this.urls.clear();
+    }
   }
 }
 

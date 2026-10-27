@@ -85,6 +85,7 @@ export interface Incident {
 export interface AppConfig {
   demo_mode: boolean;
   detector: string;
+  video_idle_timeout_s: number | null; // pause live video after this long without input
 }
 
 export interface ProbeResult {

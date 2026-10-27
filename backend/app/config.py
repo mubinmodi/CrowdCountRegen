@@ -42,6 +42,18 @@ class Settings(BaseSettings):
     # MJPEG output rate; None = max_fps. Lower it to save bandwidth (e.g. behind a CDN).
     stream_fps: float | None = None
 
+    # Video viewers (the frames socket and MJPEG streams; status updates are not limited).
+    # Video is the only part whose cost grows with every viewer, so a public demo caps it.
+    max_video_viewers: int | None = None  # None = unlimited; extra viewers get "busy"
+    video_session_max_s: float | None = None  # close video after this long; client can resume
+    video_idle_timeout_s: float | None = None  # browsers pause video after this long idle
+
+    # CloudWatch Embedded Metric Format: one JSON line per camera, plus one for the whole
+    # fleet, written to stdout every interval. Any log shipper to CloudWatch Logs (e.g. the
+    # awslogs Docker driver) turns them into metrics, with no SDK calls or credentials here.
+    metrics: Literal["off", "emf"] = "off"
+    metrics_interval_s: float = 60.0
+
     # Incidents: an alert must hold this long to open one, and be clear this long to close it.
     # Occupancy hovers around its limit, so it gets a longer clear-down: one busy spell is one
     # incident. A danger zone closes quickly, so separate intrusions stay separate.

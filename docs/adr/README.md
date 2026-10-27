@@ -14,3 +14,5 @@ its status.
 | [0006](0006-public-demo-mode.md) | Public demo mode: shared account, push-only sources | Accepted |
 | [0007](0007-aws-single-gpu-instance-behind-cloudfront.md) | AWS: one GPU instance behind CloudFront, immutable redeploys | Accepted |
 | [0008](0008-demo-footage-fetched-at-boot.md) | Demo footage is downloaded and trimmed at first boot, not committed | Accepted |
+| [0009](0009-video-cost-controls-and-emf-metrics.md) | Cap and pause video for cost; publish metrics as EMF log lines | Accepted |
+| [0010](0010-deploy-with-github-oidc-and-approval.md) | Deploy from GitHub Actions with OIDC roles and a manual approval | Accepted |

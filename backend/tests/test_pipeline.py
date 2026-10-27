@@ -221,6 +221,9 @@ def test_frames_socket_sends_tagged_jpegs(client, video_file):
 def test_frames_socket_requires_login(client):
     from starlette.websockets import WebSocketDisconnect
 
-    with pytest.raises(WebSocketDisconnect) as closed, client.websocket_connect("/api/ws/frames"):
-        pass
+    with (
+        client.websocket_connect("/api/ws/frames") as ws,
+        pytest.raises(WebSocketDisconnect) as closed,
+    ):
+        ws.receive_bytes()
     assert closed.value.code == 4401

@@ -192,3 +192,4 @@ class AppConfigOut(BaseModel):
 
     demo_mode: bool
     detector: str
+    video_idle_timeout_s: float | None  # pause video after this long without interaction

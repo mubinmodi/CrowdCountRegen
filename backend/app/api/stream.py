@@ -16,6 +16,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.db import Camera, SessionLocal
 from app.deps import user_from_cookies, websocket_user
+from app.viewers import VideoSlots
 from app.vision.manager import CameraManager
 
 router = APIRouter(prefix="/api", tags=["live"])
@@ -41,32 +42,56 @@ async def mjpeg_stream(
     """`size=small` is a 480 px wide stream for grid tiles, roughly a quarter of the bytes."""
     await asyncio.to_thread(_authorize_camera, request, camera_id)
     manager: CameraManager = request.app.state.manager
+    slots: VideoSlots = request.app.state.video_slots
+    if slots.full:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Too many people are watching video right now; try again shortly.",
+            headers={"Retry-After": "30"},
+        )
     settings = get_settings()
     interval = 1.0 / (settings.stream_fps or settings.max_fps)
 
     async def frames():
-        last_seq = -1
-        # Looked up every iteration: editing a camera replaces its worker.
-        while (worker := manager.get(camera_id)) is not None:
-            if await request.is_disconnected():
-                break
-            seq, jpeg = worker.latest_jpeg(small=size == "small")
-            if jpeg is not None and seq != last_seq:
-                last_seq = seq
-                yield (
-                    b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
-                    + str(len(jpeg)).encode()
-                    + b"\r\n\r\n"
-                    + jpeg
-                    + b"\r\n"
-                )
-            await asyncio.sleep(interval)
+        # The slot is taken inside the generator so it is always released: a generator
+        # that never started has no `finally` to run.
+        if not slots.try_acquire():
+            return
+        try:
+            async for chunk in _mjpeg(manager, camera_id, request, size, interval):
+                yield chunk
+        finally:
+            slots.release()
 
     return StreamingResponse(
         frames(),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={"Cache-Control": "no-store"},
     )
+
+
+async def _mjpeg(manager: CameraManager, camera_id: int, request: Request, size: str,
+                 interval: float):  # fmt: skip
+    max_s = get_settings().video_session_max_s
+    started = time.monotonic()
+    last_seq = -1
+    # Looked up every iteration: editing a camera replaces its worker.
+    while (worker := manager.get(camera_id)) is not None:
+        if await request.is_disconnected():
+            break
+        if max_s is not None and time.monotonic() - started > max_s:
+            break
+        seq, jpeg = worker.latest_jpeg(small=size == "small")
+        if jpeg is not None and seq != last_seq:
+            last_seq = seq
+            yield (
+                b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                + str(len(jpeg)).encode()
+                + b"\r\n\r\n"
+                + jpeg
+                + b"\r\n"
+            )
+        await asyncio.sleep(interval)
 
 
 def _camera_ids_for(websocket: WebSocket) -> list[int] | None:
@@ -85,19 +110,39 @@ async def frames(websocket: WebSocket, size: Literal["full", "small"] = "small")
     all tiles sidesteps the browser's six-connections-per-host limit on HTTP/1.1, which a
     wall of long-lived MJPEG responses would exhaust (stalling every other request). Only
     the newest frame is ever sent, so a slow client gets fewer frames, not a backlog.
+
+    Refusals accept first and then close with a code: a socket closed before the handshake
+    completes reaches the browser as a generic 1006, and it couldn't tell "busy" apart.
     """
+    await websocket.accept()
     camera_ids = await asyncio.to_thread(_camera_ids_for, websocket)
     if camera_ids is None:
         await websocket.close(code=4401, reason="Not authenticated")
         return
-    await websocket.accept()
+    slots: VideoSlots = websocket.app.state.video_slots
+    if not slots.try_acquire():
+        # 4429: the browser shows "busy" and retries later instead of reconnecting at once.
+        await websocket.close(code=4429, reason="Too many video viewers")
+        return
+    try:
+        await _send_frames(websocket, camera_ids, size)
+    finally:
+        slots.release()
+
+
+async def _send_frames(websocket: WebSocket, camera_ids: list[int], size: str) -> None:
     manager: CameraManager = websocket.app.state.manager
     settings = get_settings()
     interval = 1.0 / (settings.stream_fps or settings.max_fps)
     sent: dict[int, int] = {}
-    refreshed_at = time.monotonic()
+    started = refreshed_at = time.monotonic()
     try:
         while True:
+            if (max_s := settings.video_session_max_s) and time.monotonic() - started > max_s:
+                # 4408: the session ran out; the browser offers to resume rather than
+                # reconnecting by itself, so an abandoned tab stops costing bandwidth.
+                await websocket.close(code=4408, reason="Video session expired")
+                return
             if time.monotonic() - refreshed_at > _REFRESH_CAMERAS_S:
                 camera_ids = await asyncio.to_thread(_camera_ids_for, websocket) or []
                 refreshed_at = time.monotonic()

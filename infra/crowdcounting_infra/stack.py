@@ -14,11 +14,17 @@ from aws_cdk import aws_cloudwatch_actions as cw_actions
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_events as events
 from aws_cdk import aws_iam as iam
+from aws_cdk import aws_logs as logs
 from aws_cdk import aws_s3_assets as s3_assets
 from aws_cdk import aws_scheduler as scheduler
 from aws_cdk import aws_secretsmanager as secretsmanager
+from aws_cdk import aws_sns as sns
+from aws_cdk import aws_sns_subscriptions as subscriptions
 from aws_cdk import custom_resources as cr
 from constructs import Construct
+
+from crowdcounting_infra.monitoring import Monitoring
+from crowdcounting_infra.protection import add_budget, add_web_acl
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP_SCRIPT = Path(__file__).with_name("bootstrap.sh")
@@ -68,6 +74,11 @@ ASSET_EXCLUDES = [
 def _context_flag(scope: Construct, key: str) -> bool:
     value = scope.node.try_get_context(key)
     return value is True or str(value).lower() in {"true", "1", "yes"}
+
+
+def _context_number(scope: Construct, key: str, default: float) -> float:
+    value = scope.node.try_get_context(key)
+    return float(value) if value not in (None, "") else default
 
 
 class CrowdCountingStack(cdk.Stack):
@@ -167,6 +178,26 @@ class CrowdCountingStack(cdk.Stack):
         app_source.grant_read(role)
         secret.grant_read(role)
 
+        # --- Logs: both containers, via Docker's awslogs driver (docker-compose.aws.yml) ---
+        # The backend's Embedded Metric Format lines become CloudWatch metrics on arrival.
+        log_group = logs.LogGroup(
+            self,
+            "AppLogs",
+            log_group_name="/crowdcounting/demo",
+            retention=logs.RetentionDays.TWO_WEEKS,
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+        )
+        role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["logs:CreateLogStream", "logs:PutLogEvents"],
+                resources=[log_group.log_group_arn, f"{log_group.log_group_arn}:log-stream:*"],
+            )
+        )
+
+        # --- Cost controls passed to the app --------------------------------------------
+        max_viewers = int(_context_number(self, "crowdcounting:maxVideoViewers", 40))
+        schedule = _context_flag(self, "crowdcounting:schedule")
+
         # --- User data --------------------------------------------------------------------
         user_data = ec2.UserData.for_linux()
         script = BOOTSTRAP_SCRIPT.read_text()
@@ -175,6 +206,14 @@ class CrowdCountingStack(cdk.Stack):
             "{{ASSET_BUCKET}}": app_source.s3_bucket_name,
             "{{ASSET_KEY}}": app_source.s3_object_key,
             "{{SECRET_ARN}}": secret.secret_arn,
+            "{{LOG_GROUP}}": log_group.log_group_name,
+            "{{MAX_VIDEO_VIEWERS}}": str(max_viewers),
+            "{{VIDEO_SESSION_MAX_S}}": str(
+                _context_number(self, "crowdcounting:videoSessionMaxS", 1800)
+            ),
+            "{{VIDEO_IDLE_TIMEOUT_S}}": str(
+                _context_number(self, "crowdcounting:videoIdleTimeoutS", 600)
+            ),
         }.items():
             script = script.replace(placeholder, value)
 
@@ -230,6 +269,30 @@ class CrowdCountingStack(cdk.Stack):
             "", ["ec2-", cdk.Fn.join("-", cdk.Fn.split(".", eip.attr_public_ip)), f".{dns_suffix}"]
         )
 
+        # --- Alerts: alarms and the budget notify one topic (optionally an email) ----------
+        alerts = sns.Topic(self, "Alerts", display_name="CrowdCounting alerts", enforce_ssl=True)
+        alerts.add_to_resource_policy(
+            # Setting any statement replaces the default policy, so allow both publishers.
+            iam.PolicyStatement(
+                actions=["sns:Publish"],
+                principals=[
+                    iam.ServicePrincipal("cloudwatch.amazonaws.com"),
+                    iam.ServicePrincipal("budgets.amazonaws.com"),
+                ],
+                resources=[alerts.topic_arn],
+                conditions={"StringEquals": {"aws:SourceAccount": self.account}},
+            )
+        )
+        email = str(self.node.try_get_context("crowdcounting:alertEmail") or "").strip()
+        if email:
+            alerts.add_subscription(subscriptions.EmailSubscription(email))
+
+        # --- Edge protection: rate limiting and AWS managed rules ---------------------------
+        web_acl = add_web_acl(
+            self,
+            rate_limit=int(_context_number(self, "crowdcounting:wafRateLimit", 2000)),
+        )
+
         # --- CloudFront -------------------------------------------------------------------
         origin = origins.HttpOrigin(
             origin_domain,
@@ -244,6 +307,7 @@ class CrowdCountingStack(cdk.Stack):
             self,
             "Distribution",
             comment="CrowdCounting demo",
+            web_acl_id=web_acl.attr_arn,
             price_class=cloudfront.PriceClass.PRICE_CLASS_100,
             http_version=cloudfront.HttpVersion.HTTP2_AND_3,
             default_behavior=cloudfront.BehaviorOptions(
@@ -292,8 +356,10 @@ class CrowdCountingStack(cdk.Stack):
 
         instance_alarm = status_alarm("InstanceCheckAlarm", "StatusCheckFailed_Instance")
         instance_alarm.add_alarm_action(cw_actions.Ec2Action(cw_actions.Ec2InstanceAction.REBOOT))
+        instance_alarm.add_alarm_action(cw_actions.SnsAction(alerts))
 
         system_alarm = status_alarm("SystemCheckAlarm", "StatusCheckFailed_System")
+        system_alarm.add_alarm_action(cw_actions.SnsAction(alerts))
         restart_role = iam.Role(
             self,
             "RestartRole",
@@ -350,8 +416,29 @@ class CrowdCountingStack(cdk.Stack):
         )
 
         # --- Optional nightly stop / morning start ----------------------------------------
-        if _context_flag(self, "crowdcounting:schedule"):
+        if schedule:
             self._add_schedule(instance, instance_arn)
+
+        # --- App metrics: alarms and a dashboard ------------------------------------------
+        monitoring = Monitoring(
+            self,
+            "Monitoring",
+            alerts=alerts,
+            log_group=log_group,
+            distribution=distribution,
+            max_video_viewers=max_viewers,
+            # A stopped instance sends no metrics; only treat silence as an outage when the
+            # instance is meant to be on around the clock.
+            expect_always_on=not schedule,
+            extra_alarms=[instance_alarm, system_alarm],
+        )
+
+        # --- Monthly budget ---------------------------------------------------------------
+        add_budget(
+            self,
+            monthly_usd=_context_number(self, "crowdcounting:monthlyBudgetUsd", 450),
+            topic=alerts,
+        )
 
         # --- Outputs ----------------------------------------------------------------------
         cdk.CfnOutput(
@@ -368,6 +455,8 @@ class CrowdCountingStack(cdk.Stack):
             description="Shell on the instance (needs the Session Manager plugin for the AWS CLI)",
         )
         cdk.CfnOutput(self, "SecretArn", value=secret.secret_arn)
+        cdk.CfnOutput(self, "AlertsTopicArn", value=alerts.topic_arn)
+        cdk.CfnOutput(self, "DashboardUrl", value=monitoring.dashboard_url)
 
         self._acknowledge_findings(
             role=role,
@@ -377,6 +466,7 @@ class CrowdCountingStack(cdk.Stack):
             vpc=vpc,
             distribution=distribution,
             prefix_list=prefix_list,
+            alerts=alerts,
         )
 
     def _machine_image(self) -> ec2.IMachineImage:
@@ -433,6 +523,7 @@ class CrowdCountingStack(cdk.Stack):
         vpc: ec2.Vpc,
         distribution: cloudfront.Distribution,
         prefix_list: cr.AwsCustomResource,
+        alerts: sns.Topic,
     ) -> None:
         """cdk-nag findings that are deliberate trade-offs for a single-instance demo."""
 
@@ -457,6 +548,12 @@ class CrowdCountingStack(cdk.Stack):
                 "Generated by Asset.grant_read: read-only access to the CDK assets bucket, which "
                 "the instance needs to download the app source zip.",
             )
+        ack(
+            role,
+            "AwsSolutions-IAM5[Resource::<AppLogsC5DF83A6.Arn>:log-stream:*]",
+            "Docker's awslogs driver creates one stream per container (named after the container "
+            "id), so stream names aren't known in advance. Scoped to this app's own log group.",
+        )
         ack(
             restart_role,
             "AwsSolutions-IAM5[Resource::arn:<AWS::Partition>:ssm:us-east-1:<AWS::AccountId>:"
@@ -489,6 +586,13 @@ class CrowdCountingStack(cdk.Stack):
             "not part of an Auto Scaling group.",
         )
         ack(
+            alerts,
+            "AwsSolutions-SNS2",
+            "Alert notifications carry no sensitive data (alarm names and budget figures). "
+            "Server-side encryption would need a customer managed KMS key, since CloudWatch "
+            "and Budgets can't publish to topics encrypted with the AWS managed SNS key.",
+        )
+        ack(
             vpc,
             "AwsSolutions-VPC7",
             "No VPC flow logs for the demo: the VPC holds one instance whose only inbound path is "
@@ -498,11 +602,6 @@ class CrowdCountingStack(cdk.Stack):
             (
                 "AwsSolutions-CFR1",
                 "Public demo meant to be reachable worldwide; no geo restriction.",
-            ),
-            (
-                "AwsSolutions-CFR2",
-                "No AWS WAF on the demo (cost). The origin is closed to everything but CloudFront; "
-                "add a web ACL with rate limiting for production.",
             ),
             (
                 "AwsSolutions-CFR3",
