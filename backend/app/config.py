@@ -5,15 +5,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Runtime configuration, read from environment variables (prefix CC_) or a .env file."""
+    """Runtime configuration, read from environment variables (prefix ZW_) or a .env file."""
 
-    model_config = SettingsConfigDict(env_prefix="CC_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="ZW_", env_file=".env", extra="ignore")
 
-    database_url: str = "sqlite:///./crowdcounting.db"
+    database_url: str = "sqlite:///./zonewatch.db"
 
     # Auth. secret_key MUST be overridden outside local development.
     secret_key: str = "dev-only-insecure-key-change-me-in-production"
-    session_cookie: str = "cc_session"
+    session_cookie: str = "zw_session"
     session_ttl_hours: int = 24 * 7
     cookie_secure: bool = False
 

@@ -5,10 +5,10 @@ services:
       args:
         DETECTOR_EXTRAS: ${DETECTOR_EXTRAS:-yolo}
     environment:
-      CC_SECRET_KEY: ${CC_SECRET_KEY:?Set CC_SECRET_KEY, e.g. `openssl rand -hex 32`}
-      CC_DETECTOR: ${CC_DETECTOR:-ultralytics}
-      CC_DETECTOR_MODEL: ${CC_DETECTOR_MODEL:-}
-      CC_COOKIE_SECURE: ${CC_COOKIE_SECURE:-false}
+      ZW_SECRET_KEY: ${ZW_SECRET_KEY:?Set ZW_SECRET_KEY, e.g. `openssl rand -hex 32`}
+      ZW_DETECTOR: ${ZW_DETECTOR:-ultralytics}
+      ZW_DETECTOR_MODEL: ${ZW_DETECTOR_MODEL:-}
+      ZW_COOKIE_SECURE: ${ZW_COOKIE_SECURE:-false}
     volumes:
       - data:/data
       - models:/app/models

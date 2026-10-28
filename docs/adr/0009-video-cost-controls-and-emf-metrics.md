@@ -20,7 +20,7 @@ people are watching. The backend had none of these as metrics.
 | Layer | Control |
 |---|---|
 | Browser | Video stops while the tab is hidden and after 10 minutes without input (`video_idle_timeout_s` from `/api/config`); any input resumes it |
-| Server | Video connections close after 30 minutes (`4408`), and the page asks before resuming. Past `CC_MAX_VIDEO_VIEWERS`, new video connections get `4429`/`503`, and the page retries after 30 s |
+| Server | Video connections close after 30 minutes (`4408`), and the page asks before resuming. Past `ZW_MAX_VIDEO_VIEWERS`, new video connections get `4429`/`503`, and the page retries after 30 s |
 | Edge | AWS WAF per-IP rate limit, plus AWS's IP-reputation and known-bad-input rules |
 | Account | AWS Budget alerts at 80% actual and 100% forecast |
 

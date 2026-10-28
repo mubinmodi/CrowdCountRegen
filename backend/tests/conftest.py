@@ -3,13 +3,13 @@ import tempfile
 from pathlib import Path
 
 # Configure before the app (and its engine) is imported.
-_tmp = Path(tempfile.mkdtemp(prefix="cc-tests-"))
-os.environ["CC_DATABASE_URL"] = f"sqlite:///{_tmp / 'test.db'}"
-os.environ["CC_DETECTOR"] = "fake"
-os.environ["CC_SECRET_KEY"] = "test-secret-key-with-at-least-32-bytes!!"
-os.environ["CC_RECONNECT_DELAY_S"] = "0.2"
-os.environ["CC_OPEN_TIMEOUT_S"] = "2"
-os.environ["CC_READ_TIMEOUT_S"] = "2"
+_tmp = Path(tempfile.mkdtemp(prefix="zw-tests-"))
+os.environ["ZW_DATABASE_URL"] = f"sqlite:///{_tmp / 'test.db'}"
+os.environ["ZW_DETECTOR"] = "fake"
+os.environ["ZW_SECRET_KEY"] = "test-secret-key-with-at-least-32-bytes!!"
+os.environ["ZW_RECONNECT_DELAY_S"] = "0.2"
+os.environ["ZW_OPEN_TIMEOUT_S"] = "2"
+os.environ["ZW_READ_TIMEOUT_S"] = "2"
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402

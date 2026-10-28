@@ -1,16 +1,16 @@
-# CrowdCounting first-boot bootstrap. cloud-init runs this once per instance, as root.
+# Zonewatch first-boot bootstrap. cloud-init runs this once per instance, as root.
 # The stack fills in the {{PLACEHOLDERS}}; CDK prepends a trap that reports the exit code to
 # CloudFormation (cfn-signal), so any failing command fails the deploy instead of hanging it.
 # Output goes to /var/log/cloud-init-output.log. No `set -x`: the secret must not be logged.
 set -euo pipefail
 export HOME=/root
 
-APP_DIR=/opt/crowdcounting
+APP_DIR=/opt/zonewatch
 REGION="{{REGION}}"
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.aws.yml)
 PLUGIN_DIR=/usr/local/lib/docker/cli-plugins
 
-log() { echo "[crowdcounting] $*"; }
+log() { echo "[zonewatch] $*"; }
 
 # --- 1. Host tools ------------------------------------------------------------------------
 # cfn-signal (used by the exit trap) and unzip ship with most AL2023 images; install if not.
@@ -74,9 +74,9 @@ fi
 
 # --- 3. App code --------------------------------------------------------------------------
 mkdir -p "$APP_DIR"
-aws s3 cp "s3://{{ASSET_BUCKET}}/{{ASSET_KEY}}" /tmp/crowdcounting.zip --region "$REGION" --quiet
-unzip -o -q /tmp/crowdcounting.zip -d "$APP_DIR"
-rm -f /tmp/crowdcounting.zip
+aws s3 cp "s3://{{ASSET_BUCKET}}/{{ASSET_KEY}}" /tmp/zonewatch.zip --region "$REGION" --quiet
+unzip -o -q /tmp/zonewatch.zip -d "$APP_DIR"
+rm -f /tmp/zonewatch.zip
 mkdir -p "$APP_DIR/videos"
 
 # --- 4. Configuration ---------------------------------------------------------------------
@@ -87,30 +87,30 @@ secret_key=$(aws secretsmanager get-secret-value --region "$REGION" \
   cat > "$APP_DIR/.env" <<EOF
 # Written by the instance bootstrap. Read by docker compose for \${VAR} substitution, and passed
 # to the backend container whole by docker-compose.gpu.yml (env_file).
-CC_SECRET_KEY=${secret_key}
-CC_DEMO_MODE=true
-CC_STREAM_FPS=8
+ZW_SECRET_KEY=${secret_key}
+ZW_DEMO_MODE=true
+ZW_STREAM_FPS=8
 # Keep the downloaded scenario videos on the /data volume (writable by the container user).
-CC_DEMO_VIDEO_DIR=/data/demo-videos
-CC_DEVICE=${device}
-CC_DETECTOR=ultralytics
+ZW_DEMO_VIDEO_DIR=/data/demo-videos
+ZW_DEVICE=${device}
+ZW_DETECTOR=ultralytics
 # The scenarios' zones and limits were tuned at this inference size and confidence; the
 # plaza's distant crowd is mostly missed at the default 640.
-CC_DETECTOR_IMGSZ=1280
-CC_CONFIDENCE=0.3
+ZW_DETECTOR_IMGSZ=1280
+ZW_CONFIDENCE=0.3
 # Viewers reach the app over HTTPS (CloudFront), so session cookies can be Secure.
-CC_COOKIE_SECURE=true
+ZW_COOKIE_SECURE=true
 # Cost controls for a public URL: video is the only part whose cost grows with every viewer.
-CC_MAX_VIDEO_VIEWERS={{MAX_VIDEO_VIEWERS}}
-CC_VIDEO_SESSION_MAX_S={{VIDEO_SESSION_MAX_S}}
-CC_VIDEO_IDLE_TIMEOUT_S={{VIDEO_IDLE_TIMEOUT_S}}
+ZW_MAX_VIDEO_VIEWERS={{MAX_VIDEO_VIEWERS}}
+ZW_VIDEO_SESSION_MAX_S={{VIDEO_SESSION_MAX_S}}
+ZW_VIDEO_IDLE_TIMEOUT_S={{VIDEO_IDLE_TIMEOUT_S}}
 # Per-camera and fleet metrics as CloudWatch Embedded Metric Format lines on stdout, which
 # the awslogs driver (docker-compose.aws.yml) delivers to CloudWatch.
-CC_METRICS=emf
-CC_METRICS_INTERVAL_S=60
+ZW_METRICS=emf
+ZW_METRICS_INTERVAL_S=60
 # For docker-compose.aws.yml's logging options.
 AWS_REGION=${REGION}
-CC_LOG_GROUP={{LOG_GROUP}}
+ZW_LOG_GROUP={{LOG_GROUP}}
 EOF
 )
 unset secret_key

@@ -16,7 +16,7 @@ topic per page.
 
 | Page | For |
 |---|---|
-| [Configuration](configuration.md) | Every `CC_*` setting, with defaults and presets |
+| [Configuration](configuration.md) | Every `ZW_*` setting, with defaults and presets |
 | [API](api.md) | Every endpoint, the WebSocket protocols and close codes |
 | [Development](development.md) | Code layout, checks, tests, migrations, extension points |
 

@@ -23,13 +23,13 @@ pick a stream profile from the camera itself. For counting, a camera's lower-res
 *sub-stream* is usually plenty and much lighter on bandwidth and CPU.
 
 **Credentials** go in their own fields; any `user:pass@` pasted into a URL is moved there.
-Passwords are encrypted at rest with a key derived from `CC_SECRET_KEY` and are never sent
-back to the browser. Changing `CC_SECRET_KEY` makes stored camera passwords unreadable, and
+Passwords are encrypted at rest with a key derived from `ZW_SECRET_KEY` and are never sent
+back to the browser. Changing `ZW_SECRET_KEY` makes stored camera passwords unreadable, and
 those cameras report an auth error until their password is re-entered.
 
-**Resilience.** Every connection has open and read timeouts (`CC_OPEN_TIMEOUT_S`,
-`CC_READ_TIMEOUT_S`), so a hung camera can't freeze its worker. Failed or dropped streams
-reconnect with exponential backoff, up to `CC_RECONNECT_MAX_DELAY_S`. Each camera's page shows
+**Resilience.** Every connection has open and read timeouts (`ZW_OPEN_TIMEOUT_S`,
+`ZW_READ_TIMEOUT_S`), so a hung camera can't freeze its worker. Failed or dropped streams
+reconnect with exponential backoff, up to `ZW_RECONNECT_MAX_DELAY_S`. Each camera's page shows
 live stream health: state, last error with a hint, resolution, codec and reconnect count.
 
 **Phones need HTTPS.** Browsers only allow camera access on secure pages (or `localhost`).

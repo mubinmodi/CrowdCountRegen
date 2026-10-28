@@ -1,7 +1,7 @@
 [project]
-name = "crowdcounting"
+name = "zonewatch"
 version = "2.0.0"
-description = "Real-time crowd counting with zone-based tracking and live analytics"
+description = "Real-time occupancy counting and construction-site danger zones on live camera feeds"
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "fastapi>=0.162",

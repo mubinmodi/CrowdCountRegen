@@ -30,8 +30,8 @@ The enlarged view adds one full 960 px stream at 60–350 KB per frame
 CloudFront's always-free tier covers the first **1 TB/month** of egress and 10 million
 requests. After that, egress to North America and Europe costs about $0.085/GB (≈ $85 per
 extra TB). Origin traffic from EC2 to CloudFront is free, and so is inbound traffic such as
-phone publishing. To control egress: lower `CC_STREAM_FPS` (bandwidth scales linearly with
-it) or `CC_JPEG_QUALITY`, and keep the nightly stop enabled.
+phone publishing. To control egress: lower `ZW_STREAM_FPS` (bandwidth scales linearly with
+it) or `ZW_JPEG_QUALITY`, and keep the nightly stop enabled.
 
 Spot pricing for g4dn.xlarge is usually 60–70% cheaper, but a Spot interruption would take
 the demo down. Moving to Spot is a small change if that's acceptable.
@@ -46,8 +46,8 @@ the small status socket and are never limited.
 |---|---|---|
 | Pause hidden tabs | Browser (`frontend/src/lib/video.ts`) | Video stops the moment a tab goes to the background and resumes when it's visible |
 | Idle pause | Browser, timeout from `/api/config` | After `videoIdleTimeoutS` (10 min) without input, video pauses until the next input |
-| Session limit | Server (`CC_VIDEO_SESSION_MAX_S`) | Video connections close after 30 min with code 4408. The page asks before resuming, so a tab left open on a wall screen stops costing bandwidth |
-| Viewer cap | Server (`CC_MAX_VIDEO_VIEWERS`) | Past 40 concurrent video connections, new ones get 4429 (WebSocket) or 503 (MJPEG). The page shows "at capacity" and retries after 30 s |
+| Session limit | Server (`ZW_VIDEO_SESSION_MAX_S`) | Video connections close after 30 min with code 4408. The page asks before resuming, so a tab left open on a wall screen stops costing bandwidth |
+| Viewer cap | Server (`ZW_MAX_VIDEO_VIEWERS`) | Past 40 concurrent video connections, new ones get 4429 (WebSocket) or 503 (MJPEG). The page shows "at capacity" and retries after 30 s |
 | Rate limit | WAF | 429 for any IP over 2,000 requests in 5 minutes. Video and status are a few long-lived connections, so normal use is far below this |
 | Managed rules | WAF | AWS IP-reputation list (known bots, scanners) and known-bad inputs (exploit payloads) |
 | Budget | AWS Budgets | Email/SNS alert at 80% of the monthly budget, or when the forecast passes 100% |
@@ -55,7 +55,7 @@ the small status socket and are never limited.
 
 Worst case with the defaults: 40 viewers × about 2 MB/s ≈ 80 MB/s ≈ 290 GB per hour, roughly
 $25 per hour beyond the free tier. The `ViewersNearLimit` alarm and the budget exist so that
-doesn't go unnoticed; lower `maxVideoViewers` or `CC_STREAM_FPS` to cap it harder.
+doesn't go unnoticed; lower `maxVideoViewers` or `ZW_STREAM_FPS` to cap it harder.
 
 ---
 

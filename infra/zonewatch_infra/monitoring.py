@@ -1,6 +1,6 @@
 """Alarms and a dashboard on the app's own metrics.
 
-The backend publishes CloudWatch Embedded Metric Format lines (namespace CrowdCounting) every
+The backend publishes CloudWatch Embedded Metric Format lines (namespace Zonewatch) every
 minute: per camera (dimension CameraId) FPS, Occupancy, Alerting and Reconnects, and for the
 fleet Cameras, CamerasRunning, CamerasStalled, CamerasAlerting, IncidentsOpen, VideoViewers,
 Inferences, InferenceMs and LockWaitMs. See backend/app/metrics.py.
@@ -14,7 +14,7 @@ from aws_cdk import aws_logs as logs
 from aws_cdk import aws_sns as sns
 from constructs import Construct
 
-NAMESPACE = "CrowdCounting"
+NAMESPACE = "Zonewatch"
 MINUTE = cdk.Duration.minutes(1)
 
 
@@ -79,13 +79,13 @@ class Monitoring(Construct):
             ),
         )
         # Cameras share one model behind a lock. Waiting more than twice as long for the
-        # accelerator as using it means it is saturated: lower CC_MAX_FPS or the image size.
+        # accelerator as using it means it is saturated: lower ZW_MAX_FPS or the image size.
         saturated = cw.Alarm(
             self,
             "DetectorSaturated",
             alarm_description=(
                 "Cameras wait more than twice as long for the detector as inference takes. "
-                "Lower CC_MAX_FPS or CC_DETECTOR_IMGSZ, or use a bigger GPU."
+                "Lower ZW_MAX_FPS or ZW_DETECTOR_IMGSZ, or use a bigger GPU."
             ),
             metric=cw.MathExpression(
                 expression="IF(infer > 0, wait / infer, 0)",
@@ -106,7 +106,7 @@ class Monitoring(Construct):
             "ViewersNearLimit",
             alarm_description=(
                 f"Video viewers reached 80% of the cap ({max_video_viewers}). Above the cap, "
-                "visitors get counts but no video. Raise crowdcounting:maxVideoViewers if "
+                "visitors get counts but no video. Raise zonewatch:maxVideoViewers if "
                 "egress cost allows."
             ),
             metric=app_metric("VideoViewers", period=cdk.Duration.minutes(5)),
@@ -134,7 +134,7 @@ class Monitoring(Construct):
         dashboard = cw.Dashboard(
             self,
             "Dashboard",
-            dashboard_name="CrowdCounting",
+            dashboard_name="Zonewatch",
             default_interval=cdk.Duration.hours(3),
         )
         dashboard.add_widgets(
@@ -204,5 +204,5 @@ class Monitoring(Construct):
 
         self.dashboard_url = (
             f"https://{cdk.Aws.REGION}.console.aws.amazon.com/cloudwatch/home"
-            f"?region={cdk.Aws.REGION}#dashboards/dashboard/CrowdCounting"
+            f"?region={cdk.Aws.REGION}#dashboards/dashboard/Zonewatch"
         )

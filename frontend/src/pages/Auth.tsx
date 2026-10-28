@@ -45,7 +45,7 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle: str
       <aside className="relative hidden flex-col gap-10 overflow-hidden border-r border-line bg-panel bg-grid p-10 lg:flex">
         <div className="flex items-center gap-3">
           <BrandMark className="h-7 w-7 text-signal" />
-          <div className="font-mono text-[13px] font-semibold tracking-[0.1em]">CROWDCOUNT</div>
+          <div className="font-mono text-[13px] font-semibold tracking-[0.1em]">ZONEWATCH</div>
         </div>
         <div className="my-auto max-w-lg">
           <h2 className="text-[28px] leading-tight font-semibold tracking-tight">
@@ -67,7 +67,7 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle: str
         <div className="w-full max-w-[360px]">
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
             <BrandMark className="h-6 w-6 text-signal" />
-            <span className="font-mono text-[13px] font-semibold tracking-[0.1em]">CROWDCOUNT</span>
+            <span className="font-mono text-[13px] font-semibold tracking-[0.1em]">ZONEWATCH</span>
           </div>
           <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
           <p className="mt-1 text-sm text-dim">{subtitle}</p>

@@ -1,7 +1,7 @@
 [project]
-name = "crowdcounting-infra"
+name = "zonewatch-infra"
 version = "0.1.0"
-description = "AWS CDK app that deploys the CrowdCounting demo to one GPU instance behind CloudFront"
+description = "AWS CDK app that deploys the Zonewatch demo to one GPU instance behind CloudFront"
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "aws-cdk-lib>=2.275,<3",

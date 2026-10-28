@@ -266,7 +266,7 @@ const GUIDE: { title: string; body: ReactNode }[] = [
 /** Public demo: what visitors are looking at and what to try. Collapses to a slim bar. */
 function DemoGuide() {
   const qc = useQueryClient();
-  const [open, setOpen] = usePersistentState("cc.demo.guide", true);
+  const [open, setOpen] = usePersistentState("zw.demo.guide", true);
   const reset = useMutation({
     mutationFn: api.resetDemo,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["cameras"] }),
@@ -300,7 +300,7 @@ function DemoGuide() {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="rounded-sm border border-info/50 px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-info">PUBLIC DEMO</span>
-            <h2 id="demo-guide-title" className="text-[15px] font-semibold">Welcome to CrowdCounting</h2>
+            <h2 id="demo-guide-title" className="text-[15px] font-semibold">Welcome to Zonewatch</h2>
           </div>
           <p className="mt-1 max-w-3xl text-[13px] text-dim">
             Seven cameras play looping sample footage while the server detects and tracks people in real time: three
@@ -374,7 +374,7 @@ export function LivePage() {
   const { demo_mode: demo } = useAppConfig();
   const cameras = useQuery({ queryKey: ["cameras"], queryFn: api.cameras });
   const live = useLive();
-  const [columns, setColumns] = usePersistentState<Columns>("cc.live.columns", 3);
+  const [columns, setColumns] = usePersistentState<Columns>("zw.live.columns", 3);
   const [focusId, setFocusId] = useState<number | null>(null);
 
   const list = cameras.data ?? [];

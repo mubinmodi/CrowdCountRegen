@@ -1,6 +1,6 @@
 # System design
 
-CrowdCounting turns live camera feeds into two kinds of signal:
+Zonewatch turns live camera feeds into two kinds of signal:
 
 - **Occupancy:** how many people are inside an area right now, and how many distinct people
   have passed through it. Used for capacity limits, staffing and footfall analytics.

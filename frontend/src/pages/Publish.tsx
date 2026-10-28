@@ -27,9 +27,9 @@ export function PublishPage() {
   const [error, setError] = useState<string | null>(null);
   const [cameraName, setCameraName] = useState<string | null>(null);
   const [server, setServer] = useState<CameraStatus | null>(null);
-  const [facing, setFacing] = usePersistentState<"environment" | "user">("cc.publish.facing", "environment");
-  const [quality, setQuality] = usePersistentState<Quality>("cc.publish.quality", "standard");
-  const [fps, setFps] = usePersistentState("cc.publish.fps", 10);
+  const [facing, setFacing] = usePersistentState<"environment" | "user">("zw.publish.facing", "environment");
+  const [quality, setQuality] = usePersistentState<Quality>("zw.publish.quality", "standard");
+  const [fps, setFps] = usePersistentState("zw.publish.fps", 10);
   const [sent, setSent] = useState({ fps: 0, kbps: 0 });
   // The send loop reads the latest settings without restarting.
   const settings = useRef({ maxWidth: WIDTH[quality], fps });
@@ -138,7 +138,7 @@ export function PublishPage() {
     <div className="flex min-h-dvh flex-col bg-bg">
       <header className="flex h-12 items-center gap-2.5 border-b border-line px-4">
         <BrandMark className="h-5 w-5 text-signal" />
-        <span className="font-mono text-[12px] font-semibold tracking-[0.1em]">CROWDCOUNT</span>
+        <span className="font-mono text-[12px] font-semibold tracking-[0.1em]">ZONEWATCH</span>
         <span className="truncate font-mono text-[11px] tracking-wider text-mute">/ {cameraName ?? "PUBLISH"}</span>
         <span className={cx("ml-auto shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[10px] tracking-wider", pill[phase][1])}>
           {pill[phase][0]}
@@ -157,7 +157,7 @@ export function PublishPage() {
                   ? "Another device started streaming to this camera, so this one stopped."
                   : phase === "invalid"
                     ? "This publish link was revoked or the camera was deleted. Ask for a new link."
-                    : "Stream this device's camera to the crowd counter. Point it at the area to count."}
+                    : "Stream this device's camera to Zonewatch. Point it at the area to watch."}
               </p>
             </div>
           )}

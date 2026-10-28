@@ -17,13 +17,13 @@ this camera", makes the **server** open a URL, file or device a user chooses:
 
 ## Decision
 
-`CC_DEMO_MODE=true` turns on:
+`ZW_DEMO_MODE=true` turns on:
 
 - **No login.** Every request acts as one shared demo user, and the sign-in pages redirect to
   the app.
 - **Push-only sources.** Visitors can add *browser* cameras (a phone or laptop sends frames
   to the server), but creating, re-sourcing or probing any other kind returns 403, as do both
-  ONVIF endpoints. Browser cameras are capped (`CC_DEMO_MAX_BROWSER_CAMERAS`, default 4).
+  ONVIF endpoints. Browser cameras are capped (`ZW_DEMO_MAX_BROWSER_CAMERAS`, default 4).
 - **Protected scenarios.** Seeded scenario cameras can have their name, zone, mode and limit
   edited, but can't be deleted or given a new source. `POST /api/demo/reset` restores them,
   and visitors can click Reset at any time.

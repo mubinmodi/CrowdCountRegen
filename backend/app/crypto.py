@@ -1,4 +1,4 @@
-"""Encryption at rest for camera passwords, keyed from CC_SECRET_KEY.
+"""Encryption at rest for camera passwords, keyed from ZW_SECRET_KEY.
 
 Rotating the secret key makes stored camera passwords unreadable; those cameras then report
 an auth error until their password is re-entered.
@@ -15,6 +15,8 @@ from app.config import get_settings
 
 @lru_cache
 def _fernet(secret: str) -> Fernet:
+    # The label predates the rename to Zonewatch. It must stay as it is: changing it would
+    # derive a different key, and every stored camera password would become unreadable.
     key = hashlib.sha256(b"crowdcounting/camera-credentials/v1:" + secret.encode()).digest()
     return Fernet(base64.urlsafe_b64encode(key))
 

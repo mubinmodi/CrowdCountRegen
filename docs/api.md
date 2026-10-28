@@ -7,11 +7,11 @@ close codes and the rules around ownership and demo mode.
 
 ## Conventions
 
-- **Auth** is a signed, expiring session token in the httpOnly cookie `cc_session` (set by
-  sign-up and login, `SameSite=Lax`, `Secure` when `CC_COOKIE_SECURE=true`). Browsers send it
+- **Auth** is a signed, expiring session token in the httpOnly cookie `zw_session` (set by
+  sign-up and login, `SameSite=Lax`, `Secure` when `ZW_COOKIE_SECURE=true`). Browsers send it
   automatically, including on WebSockets and `<img>` requests, which is why the frontend and
   API share an origin (Vite's proxy in development, nginx in Docker).
-- **Demo mode** (`CC_DEMO_MODE=true`): every request acts as the shared demo user, with no
+- **Demo mode** (`ZW_DEMO_MODE=true`): every request acts as the shared demo user, with no
   cookie needed.
 - **Ownership:** every camera-scoped route checks that the camera belongs to the caller and
   answers **404** (not 403) otherwise, so other users' ids can't be discovered.
@@ -25,7 +25,7 @@ close codes and the rules around ownership and demo mode.
 | 404 | Not found, or not yours |
 | 409 | Email already registered; a publish token for a non-browser camera; demo phone-camera cap reached |
 | 422 | Validation (e.g. a zone with fewer than 3 points, a stream URL without a host) |
-| 503 | MJPEG requested while video viewers are at `CC_MAX_VIDEO_VIEWERS` (`Retry-After: 30`); no frame yet for a snapshot |
+| 503 | MJPEG requested while video viewers are at `ZW_MAX_VIDEO_VIEWERS` (`Retry-After: 30`); no frame yet for a snapshot |
 
 ## Meta
 
@@ -143,9 +143,9 @@ limit, and returns them. Phone cameras visitors added are kept.
 
 `GET /api/cameras/{id}/stream.mjpg` is a `multipart/x-mixed-replace; boundary=frame`
 response that works directly in an `<img>`. Each part is one annotated JPEG, 960 px wide, or
-480 px with `?size=small`. Frames are sent at `CC_STREAM_FPS`, and only when a new one exists.
-When the server is at `CC_MAX_VIDEO_VIEWERS`, it answers **503** with `Retry-After: 30`. With
-`CC_VIDEO_SESSION_MAX_S` set, the response ends after that long.
+480 px with `?size=small`. Frames are sent at `ZW_STREAM_FPS`, and only when a new one exists.
+When the server is at `ZW_MAX_VIDEO_VIEWERS`, it answers **503** with `Retry-After: 30`. With
+`ZW_VIDEO_SESSION_MAX_S` set, the response ends after that long.
 
 ## WebSockets
 
@@ -173,14 +173,14 @@ Binary messages, one per new frame per camera:
 ```
 
 `size` defaults to `small` (480 px). Only the newest frame of each camera is sent, at
-`CC_STREAM_FPS`, so a slow client gets fewer frames rather than a backlog. The server accepts
+`ZW_STREAM_FPS`, so a slow client gets fewer frames rather than a backlog. The server accepts
 the connection before refusing it, so the browser receives the code:
 
 | Close code | Meaning | What the frontend does |
 |---|---|---|
 | 4401 | Not authenticated | Stops |
-| 4429 | At `CC_MAX_VIDEO_VIEWERS` | Shows "at capacity", retries after 30 s |
-| 4408 | Session reached `CC_VIDEO_SESSION_MAX_S` | Shows *Resume video*, waits for a click |
+| 4429 | At `ZW_MAX_VIDEO_VIEWERS` | Shows "at capacity", retries after 30 s |
+| 4408 | Session reached `ZW_VIDEO_SESSION_MAX_S` | Shows *Resume video*, waits for a click |
 
 ### `/api/publish/{token}`: phone and laptop cameras
 

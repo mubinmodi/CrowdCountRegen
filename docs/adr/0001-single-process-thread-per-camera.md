@@ -31,8 +31,8 @@ and on a single GPU, serial calls are about as fast as concurrent ones.
 
 - One deployable, no broker, no serialization; the whole system runs on a laptop.
 - Total throughput is capped by one accelerator: *cameras × FPS × inference time ≤ 1 s/s*.
-  That's acceptable at this scale, with the cap tuned per deployment (`CC_MAX_FPS`,
-  `CC_DETECTOR_IMGSZ`).
+  That's acceptable at this scale, with the cap tuned per deployment (`ZW_MAX_FPS`,
+  `ZW_DETECTOR_IMGSZ`).
 - One failure domain. Mitigated inside the process (every camera's errors are caught and
   retried), but a crash takes every camera down.
 - The way out is in [Scaling beyond one node](../architecture/scaling.md): the same

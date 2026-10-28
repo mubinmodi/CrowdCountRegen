@@ -19,7 +19,7 @@ follows the walkthrough below. Captions and the cursor were added for the record
 cd backend
 uv sync --extra yolo
 uv run python -m app.demo        # first time: downloads and trims the clips (~280 MB, 1–2 min)
-CC_DEMO_MODE=true CC_DETECTOR_IMGSZ=1280 CC_CONFIDENCE=0.3 CC_STREAM_FPS=8 \
+ZW_DEMO_MODE=true ZW_DETECTOR_IMGSZ=1280 ZW_CONFIDENCE=0.3 ZW_STREAM_FPS=8 \
   uv run uvicorn app.main:app --port 8000
 ```
 
@@ -27,15 +27,15 @@ CC_DEMO_MODE=true CC_DETECTOR_IMGSZ=1280 CC_CONFIDENCE=0.3 CC_STREAM_FPS=8 \
 cd frontend && npm install && npm run dev     # http://localhost:5173
 ```
 
-To try the public-demo cost controls locally, add `CC_VIDEO_IDLE_TIMEOUT_S=60`
-(video pauses after a minute without input) or `CC_MAX_VIDEO_VIEWERS=0` (every viewer gets
-"at capacity" while counts keep updating). On a Mac add `CC_DEVICE=mps` to use the GPU; expect 3–6 FPS per camera across seven cameras.
-With an NVIDIA GPU, use `CC_DEVICE=cuda:0`. Without one, set `CC_DETECTOR_IMGSZ=640` and
-`CC_MAX_FPS=5` to keep up, at the cost of missing most of the plaza's distant crowd. The
+To try the public-demo cost controls locally, add `ZW_VIDEO_IDLE_TIMEOUT_S=60`
+(video pauses after a minute without input) or `ZW_MAX_VIDEO_VIEWERS=0` (every viewer gets
+"at capacity" while counts keep updating). On a Mac add `ZW_DEVICE=mps` to use the GPU; expect 3–6 FPS per camera across seven cameras.
+With an NVIDIA GPU, use `ZW_DEVICE=cuda:0`. Without one, set `ZW_DETECTOR_IMGSZ=640` and
+`ZW_MAX_FPS=5` to keep up, at the cost of missing most of the plaza's distant crowd. The
 seeding step is optional: in demo mode the server does it in the background on first start,
 and cameras appear on the wall as each clip becomes ready.
 
-With Docker: `CC_SECRET_KEY=$(openssl rand -hex 32)` plus the same `CC_*` variables in a `.env`
+With Docker: `ZW_SECRET_KEY=$(openssl rand -hex 32)` plus the same `ZW_*` variables in a `.env`
 file, then `docker compose up --build` and open http://localhost:8080. The AWS deployment is
 in [aws/](aws/README.md).
 

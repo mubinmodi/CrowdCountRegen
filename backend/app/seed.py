@@ -3,9 +3,9 @@
     uv run python -m app.seed
 
 Same as `python -m app.demo`: downloads and trims the scenario clips into
-CC_DEMO_VIDEO_DIR (default data/demo-videos) if they aren't there yet. Sign in as
-demo@example.com / demo-password (or CC_DEMO_PASSWORD), or run the API with
-CC_DEMO_MODE=true to skip the login entirely.
+ZW_DEMO_VIDEO_DIR (default data/demo-videos) if they aren't there yet. Sign in as
+demo@example.com / demo-password (or ZW_DEMO_PASSWORD), or run the API with
+ZW_DEMO_MODE=true to skip the login entirely.
 """
 
 import logging

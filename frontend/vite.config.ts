@@ -7,7 +7,7 @@ const backend = process.env.VITE_BACKEND_URL ?? "http://localhost:8000";
 
 // `npm run dev:lan` serves over HTTPS on the LAN (self-signed), because phones only allow
 // camera access on secure pages; needed to test browser publishing from a phone.
-const lan = process.env.CC_DEV_LAN === "1";
+const lan = process.env.ZW_DEV_LAN === "1";
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), ...(lan ? [basicSsl()] : [])],

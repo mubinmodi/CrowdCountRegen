@@ -4,7 +4,7 @@
 #
 # AWS access is through OIDC: GitHub issues a short-lived token for each job, and AWS only
 # accepts it for this repository's `aws-plan` / `production` environments (see
-# infra/crowdcounting_infra/github.py). No AWS keys are stored in GitHub. The approval is
+# infra/zonewatch_infra/github.py). No AWS keys are stored in GitHub. The approval is
 # the `production` environment's required reviewers. One-time setup is in
 # docs/aws/ci-cd.md; until the role variables exist, every run
 # skips both jobs.
@@ -28,7 +28,7 @@ concurrency:
 
 env:
   AWS_REGION: us-east-1
-  STACK: CrowdCounting
+  STACK: Zonewatch
   # The commit CI tested (workflow_run), or the branch tip (manual run).
   REF: ${{ github.event.workflow_run.head_sha || github.sha }}
 
@@ -62,7 +62,7 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: crowdcounting-plan-${{ github.run_id }}
+          role-session-name: zonewatch-plan-${{ github.run_id }}
       - name: Diff against the deployed stack
         # --no-change-set: a template diff, which the read-only lookup role can do.
         run: |
@@ -107,7 +107,7 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: crowdcounting-deploy-${{ github.run_id }}
+          role-session-name: zonewatch-deploy-${{ github.run_id }}
           role-duration-seconds: 3600
       - name: Deploy
         # A failed health check rolls the stack back by itself; the old instance keeps serving.

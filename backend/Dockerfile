@@ -21,8 +21,8 @@ COPY app ./app
 RUN useradd --create-home app && mkdir -p /data /app/models && chown -R app /data /app/models
 USER app
 
-ENV CC_DATABASE_URL=sqlite:////data/crowdcounting.db \
-    CC_DEMO_VIDEO_DIR=/data/demo-videos \
+ENV ZW_DATABASE_URL=sqlite:////data/zonewatch.db \
+    ZW_DEMO_VIDEO_DIR=/data/demo-videos \
     PATH="/app/.venv/bin:$PATH"
 VOLUME ["/data", "/app/models"]
 EXPOSE 8000

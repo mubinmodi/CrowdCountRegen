@@ -98,7 +98,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         <BrandMark className="h-6 w-6 shrink-0 text-signal" />
         {!collapsed && (
           <div className="leading-none">
-            <div className="font-mono text-[13px] font-semibold tracking-[0.08em]">CROWDCOUNT</div>
+            <div className="font-mono text-[13px] font-semibold tracking-[0.08em]">ZONEWATCH</div>
             <div className="mt-0.5 font-mono text-[9.5px] tracking-[0.2em] text-mute">CONSOLE · V2</div>
           </div>
         )}
@@ -253,7 +253,7 @@ function MobileTabs() {
 }
 
 export function Shell() {
-  const [collapsed, setCollapsed] = usePersistentState("cc.sidebar.collapsed", false);
+  const [collapsed, setCollapsed] = usePersistentState("zw.sidebar.collapsed", false);
   const { loaded, video_idle_timeout_s: idleTimeout } = useAppConfig();
   useEffect(() => {
     if (loaded) attachVideoGate(idleTimeout);

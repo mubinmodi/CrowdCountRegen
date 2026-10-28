@@ -1,8 +1,8 @@
 # Monitoring and alerts
 
 The backend publishes metrics as **CloudWatch Embedded Metric Format** JSON lines on stdout
-every minute (`CC_METRICS=emf`, `backend/app/metrics.py`). The awslogs driver carries them
-into CloudWatch Logs, where CloudWatch extracts them into the `CrowdCounting` namespace. No
+every minute (`ZW_METRICS=emf`, `backend/app/metrics.py`). The awslogs driver carries them
+into CloudWatch Logs, where CloudWatch extracts them into the `Zonewatch` namespace. No
 SDK calls, no agent, no credentials in the container.
 
 | Metric | Dimension | Meaning |
@@ -16,7 +16,7 @@ SDK calls, no agent, no credentials in the container.
 |---|---|---|
 | `CamerasStalled` | Any camera in error/connecting for 5 min | A source is down. Check its stream health page |
 | `BackendDown` | No running camera, or no metrics, for 10 min | The backend container or instance is down. Silence is ignored when the nightly schedule is on |
-| `DetectorSaturated` | Cameras wait more than 2× the inference time for the model, for 15 min | The GPU is the bottleneck: lower `CC_MAX_FPS` or `CC_DETECTOR_IMGSZ` |
+| `DetectorSaturated` | Cameras wait more than 2× the inference time for the model, for 15 min | The GPU is the bottleneck: lower `ZW_MAX_FPS` or `ZW_DETECTOR_IMGSZ` |
 | `ViewersNearLimit` | Video viewers ≥ 80% of the cap | A traffic spike, and visitors are about to get "busy" |
 | Instance / system status checks | EC2 health checks fail | Rebooted or restarted automatically (see [Resources](README.md#resources-and-why-each-one-exists)) |
 

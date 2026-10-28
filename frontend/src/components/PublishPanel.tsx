@@ -14,7 +14,7 @@ export function PublishPanel({ camera }: { camera: Camera }) {
   const qc = useQueryClient();
   const live = useLive();
   const status = live.statuses.get(camera.id);
-  const [base, setBase] = usePersistentState("cc.publish.base", location.origin);
+  const [base, setBase] = usePersistentState("zw.publish.base", location.origin);
   const [qr, setQr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirmRotate, setConfirmRotate] = useState(false);

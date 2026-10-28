@@ -26,7 +26,7 @@ MJPEG has two problems on a multi-camera wall:
   JPEG as a binary message: a 4-byte big-endian camera id followed by the image. The browser
   turns each into an object URL and sets it directly on that tile's `<img>`, bypassing React.
 - The **enlarged view** uses the full MJPEG stream for its one camera.
-- Both send only the newest frame, at `CC_STREAM_FPS`, so a slow client gets fewer frames,
+- Both send only the newest frame, at `ZW_STREAM_FPS`, so a slow client gets fewer frames,
   never a backlog.
 
 ## Consequences

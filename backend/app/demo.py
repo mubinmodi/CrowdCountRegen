@@ -7,7 +7,7 @@ so a fresh deployment fills its live wall over the first minute or two.
 
     uv run python -m app.demo      # prepare every scenario now (blocking)
 
-Zones and limits were tuned with CC_DETECTOR_IMGSZ=1280 and CC_CONFIDENCE=0.3, which the
+Zones and limits were tuned with ZW_DETECTOR_IMGSZ=1280 and ZW_CONFIDENCE=0.3, which the
 demo deployment uses: the plaza's distant crowd is mostly invisible at the default 640.
 """
 
@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 DEMO_EMAIL = "demo@example.com"
 DEMO_NAME = "Demo"
 _TARGET_WIDTH = 960  # the worker's default frame_width; decoding more is wasted work
-_USER_AGENT = "Mozilla/5.0 (CrowdCounting demo seeder)"
+_USER_AGENT = "Mozilla/5.0 (Zonewatch demo seeder)"
 
 
 @dataclass(frozen=True)
@@ -153,7 +153,7 @@ BY_KEY = {s.key: s for s in SCENARIOS}
 def ensure_demo_user(db: Session) -> User:
     user = db.scalar(select(User).where(User.email == DEMO_EMAIL))
     if user is None:
-        password = os.environ.get("CC_DEMO_PASSWORD", "demo-password")
+        password = os.environ.get("ZW_DEMO_PASSWORD", "demo-password")
         user = User(email=DEMO_EMAIL, name=DEMO_NAME, password_hash=hash_password(password))
         db.add(user)
         db.commit()
@@ -277,4 +277,4 @@ if __name__ == "__main__":
     init_db()
     seed(get_settings())
     print(f"Demo ready: {len(SCENARIOS)} scenarios for {DEMO_EMAIL}")
-    print("Start the API with CC_DEMO_MODE=true to skip the login.")
+    print("Start the API with ZW_DEMO_MODE=true to skip the login.")

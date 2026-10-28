@@ -1,6 +1,6 @@
 """Smoke tests against the real models. Opt-in, since they download weights:
 
-CC_RUN_MODEL_TESTS=1 uv run --extra yolo --extra rfdetr pytest tests/test_detectors.py
+ZW_RUN_MODEL_TESTS=1 uv run --extra yolo --extra rfdetr pytest tests/test_detectors.py
 """
 
 import os
@@ -14,7 +14,7 @@ from app.config import Settings
 from app.vision.detectors import build_detector
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("CC_RUN_MODEL_TESTS") != "1", reason="set CC_RUN_MODEL_TESTS=1"
+    os.environ.get("ZW_RUN_MODEL_TESTS") != "1", reason="set ZW_RUN_MODEL_TESTS=1"
 )
 
 BUS_IMAGE = "https://ultralytics.com/images/bus.jpg"  # 4 people + a bus

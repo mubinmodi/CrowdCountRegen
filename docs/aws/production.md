@@ -8,7 +8,7 @@ This stack is shaped for a cheap, always-reachable demo. For a real multi-tenant
    a media path (for example, WebRTC/HLS through a media server, or Kinesis Video Streams)
    instead of MJPEG through the API.
 2. **Use RDS for PostgreSQL** (or Aurora) instead of SQLite. The backend already supports
-   `CC_DATABASE_URL=postgresql+psycopg://…`.
+   `ZW_DATABASE_URL=postgresql+psycopg://…`.
 3. **Autoscale the GPU workers** on ECS with an EC2 GPU capacity provider (g4dn/g5/g6), scaled
    on cameras per GPU. Store images in ECR and build them in CI instead of on the instance.
 4. **Send alerts through SNS and EventBridge**, publishing occupancy and incident events so

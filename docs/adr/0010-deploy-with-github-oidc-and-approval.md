@@ -14,8 +14,8 @@ leak and are rarely rotated.
 - `.github/workflows/deploy.yml` runs after **CI** passes on `main` (or by hand) and deploys
   the exact commit CI tested.
 - **OIDC, no stored keys.** Each job exchanges a GitHub-issued token for a one-hour AWS
-  session. The roles (`infra/crowdcounting_infra/github.py`) trust only
-  `repo:mubinmodi/CrowdCountRegen:environment:<name>`, so a fork, another branch's workflow,
+  session. The roles (`infra/zonewatch_infra/github.py`) trust only
+  `repo:mubinmodi/Zonewatch:environment:<name>`, so a fork, another branch's workflow,
   or another repository can't assume them.
 - **Two roles, two environments.** `aws-plan` may only assume CDK's read-only lookup role and
   runs `cdk diff --no-change-set`, posting the diff to the run summary. `production` may

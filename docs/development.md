@@ -8,7 +8,7 @@ The design behind the code is in the [system design](architecture/README.md).
 ```
 backend/                     FastAPI · SQLAlchemy 2 · Alembic · uv
   app/main.py                app factory, startup (migrations, demo seeding, metrics)
-  app/config.py              every CC_* setting
+  app/config.py              every ZW_* setting
   app/api/                   HTTP + WebSocket routes: auth, cameras, stream (status, frames,
                              MJPEG), incidents, analytics, publish, onvif, demo_api
   app/vision/
@@ -65,7 +65,7 @@ AWS Solutions checks, and any finding that hasn't been explicitly acknowledged f
 | `test_demo_mode.py` | No login; only browser cameras; scenario protection and reset |
 | `test_video_limits.py` | Viewer cap, session expiry, metrics format, detector stats |
 | `test_db.py` | Upgrades keep counts and incidents (incl. a simulated future table rebuild), legacy databases get their missing migrations, the migrated schema matches the models, and writes survive database errors and races |
-| `test_detectors.py` | The real models on a sample image. Opt-in: `CC_RUN_MODEL_TESTS=1 uv run --extra yolo --extra rfdetr pytest tests/test_detectors.py` |
+| `test_detectors.py` | The real models on a sample image. Opt-in: `ZW_RUN_MODEL_TESTS=1 uv run --extra yolo --extra rfdetr pytest tests/test_detectors.py` |
 
 - Tests use the **fake detector** and a temporary SQLite database (see `tests/conftest.py`).
   Tests that need people monkeypatch the fake's `detect`.
@@ -103,7 +103,7 @@ integrity before committing.
 | **A detector** | Implement `Detector` (`app/vision/detectors/__init__.py`: `name`, `detect(frame) -> sv.Detections` with people only) and add it to `build_detector()` and the `detector` setting's `Literal` in `app/config.py` |
 | **An alert rule** | Change `alert_limit()` in `app/vision/alerts.py` (pure, tested in `test_alerts.py`). Every consumer reads `over_limit` from the manager's snapshot |
 | **A notifier** (email, SMS, webhook) | Hook the incident *opened* event in `CameraManager._record`; it's the single place alerts are decided |
-| **A metric** | Add it to `MetricsCollector.collect()` in `app/metrics.py`, then a graph or alarm in `infra/crowdcounting_infra/monitoring.py` |
+| **A metric** | Add it to `MetricsCollector.collect()` in `app/metrics.py`, then a graph or alarm in `infra/zonewatch_infra/monitoring.py` |
 | **A setting** | Add it to `app/config.py` and to [Configuration](configuration.md) |
 
 ## Conventions
@@ -121,5 +121,5 @@ Camera sources are opened **by the server**, so a user can point one at any URL 
 server can reach (including through **Test connection** and ONVIF lookups). Publish links work
 like stream keys: anyone holding one can stream to that camera until it's replaced. That's
 fine for a self-hosted tool where every user is trusted. Restrict sources before exposing
-sign-up to the public internet. `CC_DEMO_MODE` does exactly that for the public demo
+sign-up to the public internet. `ZW_DEMO_MODE` does exactly that for the public demo
 ([Security](architecture/security.md)).

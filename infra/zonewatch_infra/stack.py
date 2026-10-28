@@ -1,4 +1,4 @@
-"""One-stack deployment of CrowdCounting: a single GPU instance behind CloudFront.
+"""One-stack deployment of Zonewatch: a single GPU instance behind CloudFront.
 
 Request path: viewer --HTTPS--> CloudFront --HTTP:80--> EC2 (security group admits only
 CloudFront's origin-facing ranges) --> nginx container --> FastAPI container.
@@ -23,8 +23,8 @@ from aws_cdk import aws_sns_subscriptions as subscriptions
 from aws_cdk import custom_resources as cr
 from constructs import Construct
 
-from crowdcounting_infra.monitoring import Monitoring
-from crowdcounting_infra.protection import add_budget, add_web_acl
+from zonewatch_infra.monitoring import Monitoring
+from zonewatch_infra.protection import add_budget, add_web_acl
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP_SCRIPT = Path(__file__).with_name("bootstrap.sh")
@@ -81,16 +81,14 @@ def _context_number(scope: Construct, key: str, default: float) -> float:
     return float(value) if value not in (None, "") else default
 
 
-class CrowdCountingStack(cdk.Stack):
+class ZonewatchStack(cdk.Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         # --- Network: public subnets only, no NAT gateway --------------------------------
         azs = [
             az.strip()
-            for az in str(self.node.try_get_context("crowdcounting:availabilityZones") or "").split(
-                ","
-            )
+            for az in str(self.node.try_get_context("zonewatch:availabilityZones") or "").split(",")
             if az.strip()
         ]
         vpc = ec2.Vpc(
@@ -132,7 +130,7 @@ class CrowdCountingStack(cdk.Stack):
             self,
             "InstanceSg",
             vpc=vpc,
-            description="CrowdCounting: HTTP from CloudFront origin-facing servers only",
+            description="Zonewatch: HTTP from CloudFront origin-facing servers only",
             # Outbound: image builds pull from PyPI/npm/Docker Hub, the backend downloads model
             # weights and demo videos, and the SSM agent talks to its endpoints.
             allow_all_outbound=True,
@@ -149,7 +147,7 @@ class CrowdCountingStack(cdk.Stack):
         secret = secretsmanager.Secret(
             self,
             "SecretKey",
-            description="CrowdCounting CC_SECRET_KEY (signs sessions, encrypts camera passwords)",
+            description="Zonewatch ZW_SECRET_KEY (signs sessions, encrypts camera passwords)",
             generate_secret_string=secretsmanager.SecretStringGenerator(
                 password_length=64, exclude_punctuation=True
             ),
@@ -170,7 +168,7 @@ class CrowdCountingStack(cdk.Stack):
             self,
             "InstanceRole",
             assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
-            description="CrowdCounting instance: SSM Session Manager, app asset, secret key",
+            description="Zonewatch instance: SSM Session Manager, app asset, secret key",
             managed_policies=[
                 iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSSMManagedInstanceCore")
             ],
@@ -183,7 +181,7 @@ class CrowdCountingStack(cdk.Stack):
         log_group = logs.LogGroup(
             self,
             "AppLogs",
-            log_group_name="/crowdcounting/demo",
+            log_group_name="/zonewatch/demo",
             retention=logs.RetentionDays.TWO_WEEKS,
             removal_policy=cdk.RemovalPolicy.DESTROY,
         )
@@ -195,8 +193,8 @@ class CrowdCountingStack(cdk.Stack):
         )
 
         # --- Cost controls passed to the app --------------------------------------------
-        max_viewers = int(_context_number(self, "crowdcounting:maxVideoViewers", 40))
-        schedule = _context_flag(self, "crowdcounting:schedule")
+        max_viewers = int(_context_number(self, "zonewatch:maxVideoViewers", 40))
+        schedule = _context_flag(self, "zonewatch:schedule")
 
         # --- User data --------------------------------------------------------------------
         user_data = ec2.UserData.for_linux()
@@ -209,10 +207,10 @@ class CrowdCountingStack(cdk.Stack):
             "{{LOG_GROUP}}": log_group.log_group_name,
             "{{MAX_VIDEO_VIEWERS}}": str(max_viewers),
             "{{VIDEO_SESSION_MAX_S}}": str(
-                _context_number(self, "crowdcounting:videoSessionMaxS", 1800)
+                _context_number(self, "zonewatch:videoSessionMaxS", 1800)
             ),
             "{{VIDEO_IDLE_TIMEOUT_S}}": str(
-                _context_number(self, "crowdcounting:videoIdleTimeoutS", 600)
+                _context_number(self, "zonewatch:videoIdleTimeoutS", 600)
             ),
         }.items():
             script = script.replace(placeholder, value)
@@ -223,7 +221,7 @@ class CrowdCountingStack(cdk.Stack):
             "Instance",
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
-            # g4dn isn't offered in every AZ: -c crowdcounting:availabilityZones=us-east-1b,...
+            # g4dn isn't offered in every AZ: -c zonewatch:availabilityZones=us-east-1b,...
             # puts the instance in the first one listed (default: the VPC's first public subnet).
             availability_zone=azs[0] if azs else None,
             instance_type=ec2.InstanceType("g4dn.xlarge"),
@@ -270,7 +268,7 @@ class CrowdCountingStack(cdk.Stack):
         )
 
         # --- Alerts: alarms and the budget notify one topic (optionally an email) ----------
-        alerts = sns.Topic(self, "Alerts", display_name="CrowdCounting alerts", enforce_ssl=True)
+        alerts = sns.Topic(self, "Alerts", display_name="Zonewatch alerts", enforce_ssl=True)
         alerts.add_to_resource_policy(
             # Setting any statement replaces the default policy, so allow both publishers.
             iam.PolicyStatement(
@@ -283,14 +281,14 @@ class CrowdCountingStack(cdk.Stack):
                 conditions={"StringEquals": {"aws:SourceAccount": self.account}},
             )
         )
-        email = str(self.node.try_get_context("crowdcounting:alertEmail") or "").strip()
+        email = str(self.node.try_get_context("zonewatch:alertEmail") or "").strip()
         if email:
             alerts.add_subscription(subscriptions.EmailSubscription(email))
 
         # --- Edge protection: rate limiting and AWS managed rules ---------------------------
         web_acl = add_web_acl(
             self,
-            rate_limit=int(_context_number(self, "crowdcounting:wafRateLimit", 2000)),
+            rate_limit=int(_context_number(self, "zonewatch:wafRateLimit", 2000)),
         )
 
         # --- CloudFront -------------------------------------------------------------------
@@ -306,7 +304,7 @@ class CrowdCountingStack(cdk.Stack):
         distribution = cloudfront.Distribution(
             self,
             "Distribution",
-            comment="CrowdCounting demo",
+            comment="Zonewatch demo",
             web_acl_id=web_acl.attr_arn,
             price_class=cloudfront.PriceClass.PRICE_CLASS_100,
             http_version=cloudfront.HttpVersion.HTTP2_AND_3,
@@ -339,7 +337,7 @@ class CrowdCountingStack(cdk.Stack):
             return cloudwatch.Alarm(
                 self,
                 alarm_id,
-                alarm_description=f"CrowdCounting instance {metric_name}",
+                alarm_description=f"Zonewatch instance {metric_name}",
                 metric=cloudwatch.Metric(
                     namespace="AWS/EC2",
                     metric_name=metric_name,
@@ -364,7 +362,7 @@ class CrowdCountingStack(cdk.Stack):
             self,
             "RestartRole",
             assumed_by=iam.ServicePrincipal("events.amazonaws.com"),
-            description="Lets EventBridge restart the CrowdCounting instance via SSM Automation",
+            description="Lets EventBridge restart the Zonewatch instance via SSM Automation",
         )
 
         def automation_definition(version: str) -> str:
@@ -398,7 +396,7 @@ class CrowdCountingStack(cdk.Stack):
         events.CfnRule(
             self,
             "SystemCheckRestartRule",
-            description="Stop and start the CrowdCounting instance when its host check fails",
+            description="Stop and start the Zonewatch instance when its host check fails",
             event_pattern={
                 "source": ["aws.cloudwatch"],
                 "detail-type": ["CloudWatch Alarm State Change"],
@@ -436,7 +434,7 @@ class CrowdCountingStack(cdk.Stack):
         # --- Monthly budget ---------------------------------------------------------------
         add_budget(
             self,
-            monthly_usd=_context_number(self, "crowdcounting:monthlyBudgetUsd", 450),
+            monthly_usd=_context_number(self, "zonewatch:monthlyBudgetUsd", 450),
             topic=alerts,
         )
 
@@ -471,8 +469,8 @@ class CrowdCountingStack(cdk.Stack):
 
     def _machine_image(self) -> ec2.IMachineImage:
         # Default: the latest DLAMI, resolved by CloudFormation on every deploy (a newer AMI
-        # replaces the instance). -c crowdcounting:amiId=ami-... pins one instead.
-        ami_id = str(self.node.try_get_context("crowdcounting:amiId") or "").strip()
+        # replaces the instance). -c zonewatch:amiId=ami-... pins one instead.
+        ami_id = str(self.node.try_get_context("zonewatch:amiId") or "").strip()
         if ami_id:
             return ec2.MachineImage.generic_linux({self.region: ami_id})
         return ec2.MachineImage.from_ssm_parameter(
@@ -480,7 +478,7 @@ class CrowdCountingStack(cdk.Stack):
         )
 
     def _add_schedule(self, instance: ec2.Instance, instance_arn: str) -> None:
-        timezone = str(self.node.try_get_context("crowdcounting:timezone") or "America/New_York")
+        timezone = str(self.node.try_get_context("zonewatch:timezone") or "America/New_York")
         role = iam.Role(
             self,
             "SchedulerRole",
@@ -488,7 +486,7 @@ class CrowdCountingStack(cdk.Stack):
                 "scheduler.amazonaws.com",
                 conditions={"StringEquals": {"aws:SourceAccount": self.account}},
             ),
-            description="Lets EventBridge Scheduler stop and start the CrowdCounting instance",
+            description="Lets EventBridge Scheduler stop and start the Zonewatch instance",
         )
         role.add_to_policy(
             iam.PolicyStatement(
@@ -496,13 +494,13 @@ class CrowdCountingStack(cdk.Stack):
             )
         )
         for schedule_id, action, context_key, default in (
-            ("StopSchedule", "stopInstances", "crowdcounting:stopCron", "cron(0 23 * * ? *)"),
-            ("StartSchedule", "startInstances", "crowdcounting:startCron", "cron(0 8 * * ? *)"),
+            ("StopSchedule", "stopInstances", "zonewatch:stopCron", "cron(0 23 * * ? *)"),
+            ("StartSchedule", "startInstances", "zonewatch:startCron", "cron(0 8 * * ? *)"),
         ):
             scheduler.CfnSchedule(
                 self,
                 schedule_id,
-                description=f"CrowdCounting: {action} on a schedule",
+                description=f"Zonewatch: {action} on a schedule",
                 schedule_expression=str(self.node.try_get_context(context_key) or default),
                 schedule_expression_timezone=timezone,
                 flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(mode="OFF"),
@@ -569,7 +567,7 @@ class CrowdCountingStack(cdk.Stack):
         ack(
             secret,
             "AwsSolutions-SMG4",
-            "Not rotated: CC_SECRET_KEY signs sessions and derives the key that encrypts stored "
+            "Not rotated: ZW_SECRET_KEY signs sessions and derives the key that encrypts stored "
             "camera passwords, so rotating it would invalidate both. It is read once at boot.",
         )
         ack(

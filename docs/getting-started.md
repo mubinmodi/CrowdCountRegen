@@ -1,6 +1,6 @@
 # Getting started
 
-This gets CrowdCounting running on your machine, from a plain local setup to Docker. For the
+This gets Zonewatch running on your machine, from a plain local setup to Docker. For the
 seven-scenario demo with no login, see [the demo](demo.md). For AWS, see [aws/](aws/README.md).
 
 ## Requirements
@@ -8,7 +8,7 @@ seven-scenario demo with no login, see [the demo](demo.md). For AWS, see [aws/](
 - **Python 3.12–3.13** with [uv](https://docs.astral.sh/uv/)
 - **Node 22+** with npm 11
 - Optional: an NVIDIA GPU (Linux) or an Apple-silicon Mac for faster detection. On a CPU,
-  keep `CC_MAX_FPS` and the number of cameras low.
+  keep `ZW_MAX_FPS` and the number of cameras low.
 - Only for some tests: `ffmpeg` and [MediaMTX](https://mediamtx.org) (`brew install ffmpeg
   mediamtx`)
 
@@ -38,7 +38,7 @@ cd backend && uv run python -m app.seed    # downloads and trims ~280 MB of samp
 ```
 
 Then sign in as `demo@example.com` / `demo-password`, or run the backend with
-`CC_DEMO_MODE=true` to skip the login entirely.
+`ZW_DEMO_MODE=true` to skip the login entirely.
 
 ## Add your first camera
 
@@ -70,32 +70,32 @@ to it.
 ## Docker
 
 ```bash
-export CC_SECRET_KEY=$(openssl rand -hex 32)
+export ZW_SECRET_KEY=$(openssl rand -hex 32)
 docker compose up --build        # → http://localhost:8080
 ```
 
-- Choose the detector with `DETECTOR_EXTRAS="rfdetr" CC_DETECTOR=rfdetr docker compose up --build`.
+- Choose the detector with `DETECTOR_EXTRAS="rfdetr" ZW_DETECTOR=rfdetr docker compose up --build`.
 - Put video files in `./videos/` and use `/videos/<file>` as a camera's source.
 - The images use PyPI's PyTorch wheels, which include CUDA on Linux. On a host with an NVIDIA
   GPU and nvidia-container-toolkit, add the GPU override:
   `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build`. It also passes
-  your whole `.env` file to the backend, so any `CC_*` setting works there.
+  your whole `.env` file to the backend, so any `ZW_*` setting works there.
 - ONVIF discovery uses multicast, which can't leave Docker's bridge network. To scan for
   cameras from the container, use `network_mode: host` (see the comment in
   `docker-compose.yml`).
 
 ## Configure it
 
-Every setting is a `CC_*` environment variable or a line in `backend/.env`; the full list is
+Every setting is a `ZW_*` environment variable or a line in `backend/.env`; the full list is
 in [Configuration](configuration.md). The ones you're most likely to need:
 
 | Variable | Why |
 |---|---|
-| `CC_SECRET_KEY` | Required anywhere but your laptop |
-| `CC_DEVICE` | `mps` on a Mac, `cuda:0` with an NVIDIA GPU |
-| `CC_DETECTOR_IMGSZ` | `1280` for wide shots with small, distant people |
-| `CC_MAX_FPS` | Lower it (e.g. `5`) on a CPU or with many cameras |
-| `CC_DATABASE_URL` | Postgres instead of SQLite |
+| `ZW_SECRET_KEY` | Required anywhere but your laptop |
+| `ZW_DEVICE` | `mps` on a Mac, `cuda:0` with an NVIDIA GPU |
+| `ZW_DETECTOR_IMGSZ` | `1280` for wide shots with small, distant people |
+| `ZW_MAX_FPS` | Lower it (e.g. `5`) on a CPU or with many cameras |
+| `ZW_DATABASE_URL` | Postgres instead of SQLite |
 
 ## Troubleshooting
 
@@ -103,8 +103,8 @@ in [Configuration](configuration.md). The ones you're most likely to need:
 |---|---|
 | `address already in use` on port 8000 | Something else uses it. Run the backend on `--port 8001` and the frontend with `VITE_BACKEND_URL=http://localhost:8001 npm run dev` |
 | `objc: Class AVFFrameReceiver is implemented in both …` on macOS | OpenCV and PyAV each bundle FFmpeg's device library. Harmless warning |
-| `CC_SECRET_KEY is not set; using an insecure development key` | Expected locally. Set it everywhere else |
+| `ZW_SECRET_KEY is not set; using an insecure development key` | Expected locally. Set it everywhere else |
 | A camera stays *connecting* or shows an error | Open the camera: **Stream health** shows the error code and a hint. Sources reconnect by themselves with backoff |
-| Very low FPS with several cameras | All cameras share one detector. Use a GPU (`CC_DEVICE`), lower `CC_MAX_FPS`, or keep `CC_DETECTOR_IMGSZ` at 640 ([why](architecture/performance.md)) |
+| Very low FPS with several cameras | All cameras share one detector. Use a GPU (`ZW_DEVICE`), lower `ZW_MAX_FPS`, or keep `ZW_DETECTOR_IMGSZ` at 640 ([why](architecture/performance.md)) |
 | ONVIF finds nothing on macOS | The app running the backend needs *Local Network* permission (System Settings → Privacy & Security). You can always enter the camera's IP by hand |
 | The phone can't open its camera | The page isn't HTTPS. Use `npm run dev:lan`, or the HTTPS deployment |

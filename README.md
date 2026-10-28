@@ -1,7 +1,7 @@
-# CrowdCounting
+# Zonewatch
 
 Real-time people counting and construction-site safety on live camera feeds. Draw a zone on
-any camera, and CrowdCounting tells you how many people are inside it, how many distinct
+any camera, and Zonewatch tells you how many people are inside it, how many distinct
 people have passed through, and the moment someone enters an area they must not be in. Every
 alert is kept as an incident with the frame that triggered it.
 
@@ -53,7 +53,7 @@ Requirements: Python 3.12–3.13 with [uv](https://docs.astral.sh/uv/), and Node
 ```bash
 cd backend
 uv sync --extra yolo
-CC_DEMO_MODE=true CC_DETECTOR_IMGSZ=1280 CC_CONFIDENCE=0.3 uv run uvicorn app.main:app --port 8000
+ZW_DEMO_MODE=true ZW_DETECTOR_IMGSZ=1280 ZW_CONFIDENCE=0.3 uv run uvicorn app.main:app --port 8000
 ```
 
 ```bash
@@ -61,7 +61,7 @@ cd frontend && npm install && npm run dev      # → http://localhost:5173
 ```
 
 In demo mode the server downloads the sample footage on first start, and the scenarios
-appear on the live wall over a minute or two. Leave out `CC_DEMO_MODE` to run it normally,
+appear on the live wall over a minute or two. Leave out `ZW_DEMO_MODE` to run it normally,
 with accounts and your own cameras. More in [Getting started](docs/getting-started.md),
 including Docker and using a phone as a camera.
 
@@ -102,7 +102,7 @@ A detailed layout is in [Development](docs/development.md#repository-layout).
 
 Ultralytics YOLO is **AGPL-3.0**: running it in a network service obliges you to publish your
 source, unless you hold an Ultralytics enterprise license. RF-DETR is **Apache-2.0**; set
-`CC_DETECTOR=rfdetr` if that matters for your deployment.
+`ZW_DETECTOR=rfdetr` if that matters for your deployment.
 
 ## Credits
 

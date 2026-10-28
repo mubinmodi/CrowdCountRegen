@@ -17,11 +17,11 @@ work is roughly *cameras × FPS × inference time ≤ 1 s per second*. With the 
 what was measured. A T4 runs YOLO26n at 1280 in an estimated 8–12 ms in FP32 PyTorch
 (not measured here), so 80–120 inferences per second: 7 cameras at 11–15 FPS. Exporting the
 model to TensorRT FP16 typically gives another 2–3×. The knobs, in order of leverage:
-`CC_DETECTOR_IMGSZ` (cost grows with the square of the size; 640 is enough except for distant
-crowds), `CC_MAX_FPS` (counting doesn't need 15 FPS; 5 is usually plenty), and the model size.
+`ZW_DETECTOR_IMGSZ` (cost grows with the square of the size; 640 is enough except for distant
+crowds), `ZW_MAX_FPS` (counting doesn't need 15 FPS; 5 is usually plenty), and the model size.
 
 **Bandwidth model.** For each viewer, the wall costs the sum of the cameras' small-stream rates
-at `CC_STREAM_FPS`. For the demo at 8 FPS that's about 2 MB/s, or 7 GB per hour of viewing.
+at `ZW_STREAM_FPS`. For the demo at 8 FPS that's about 2 MB/s, or 7 GB per hour of viewing.
 The enlarged view adds one full stream. Through CloudFront that's the dominant running cost
 after the instance itself ([estimate](../aws/cost.md#cost-estimate)).
 

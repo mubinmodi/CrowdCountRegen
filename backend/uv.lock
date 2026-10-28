@@ -264,7 +264,7 @@ wheels = [
 ]
 
 [[package]]
-name = "crowdcounting"
+name = "zonewatch"
 version = "2.0.0"
 source = { editable = "." }
 dependencies = [

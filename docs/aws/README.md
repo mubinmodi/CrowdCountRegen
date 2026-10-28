@@ -1,6 +1,6 @@
 # Deploying the public demo to AWS
 
-This deploys CrowdCounting as a public, no-login demo on one NVIDIA GPU instance behind
+This deploys Zonewatch as a public, no-login demo on one NVIDIA GPU instance behind
 CloudFront. It's an AWS CDK v2 app in Python under [`infra/`](../../infra), managed with `uv`.
 Viewers get HTTPS on the default `*.cloudfront.net` domain, which is enough for live MJPEG
 video, WebSockets, and publishing from a phone camera (browsers only allow camera access on
@@ -39,7 +39,7 @@ flowchart LR
         end
     end
     s3[("CDK assets bucket<br/>app source zip")]
-    sm[("Secrets Manager<br/>CC_SECRET_KEY")]
+    sm[("Secrets Manager<br/>ZW_SECRET_KEY")]
     ssm["SSM Session Manager"]
     cw["CloudWatch status alarms"]
     eb["EventBridge (+ optional Scheduler)"]
@@ -82,7 +82,7 @@ instance by design. See [Path to production](production.md) for how to scale it 
 
 ## Resources and why each one exists
 
-All resources are tagged `Project=CrowdCounting`.
+All resources are tagged `Project=Zonewatch`.
 
 | Resource | Why |
 |---|---|
@@ -93,15 +93,15 @@ All resources are tagged `Project=CrowdCounting`.
 | **IAM role + instance profile** | `AmazonSSMManagedInstanceCore` for Session Manager, read access to the app-source asset, and read access to the one secret. |
 | **Elastic IP** | A stable origin. An instance's own public IP changes on every stop/start and replacement, and CloudFront needs a fixed DNS name. The EIP is moved to a new instance only after the new instance reports healthy. |
 | **S3 asset** (in the CDK bootstrap bucket) | The repo's `backend/`, `frontend/` and `docker-compose*.yml`, zipped by `cdk deploy`. This means no container registry and no push to GitHub. Excluded: `.git`, `node_modules`, `.venv`, `infra/`, `docs/`, local databases, `data/`, `models/`, tests, and the local dev TLS key. |
-| **Secrets Manager secret** | A random 64-character `CC_SECRET_KEY`, read once by the instance at first boot. |
+| **Secrets Manager secret** | A random 64-character `ZW_SECRET_KEY`, read once by the instance at first boot. |
 | **CloudFront distribution** | HTTPS for viewers (needed for phone cameras), edge caching for static assets, and a single public entry point, so the instance itself is never directly reachable. PriceClass 100 covers North America and Europe edges. |
-| **CloudWatch Logs** group `/crowdcounting/demo` (14 days) | Both containers log there through Docker's `awslogs` driver (`docker-compose.aws.yml`). The backend's metric lines arrive the same way. The instance role can only write streams in this one group. |
-| **SNS topic** `Alerts` (TLS-only) | Every alarm (on alarm and on recovery) and the budget notify it. `-c crowdcounting:alertEmail=you@example.com` subscribes an email; confirm the subscription email AWS sends. |
+| **CloudWatch Logs** group `/zonewatch/demo` (14 days) | Both containers log there through Docker's `awslogs` driver (`docker-compose.aws.yml`). The backend's metric lines arrive the same way. The instance role can only write streams in this one group. |
+| **SNS topic** `Alerts` (TLS-only) | Every alarm (on alarm and on recovery) and the budget notify it. `-c zonewatch:alertEmail=you@example.com` subscribes an email; confirm the subscription email AWS sends. |
 | **4 app alarms** | On the backend's own metrics. See [Monitoring and alerts](monitoring.md). |
-| **CloudWatch dashboard** `CrowdCounting` | Cameras, detector load, viewers, per-camera FPS and occupancy, CloudFront egress, and recent errors. The `DashboardUrl` output links to it. |
+| **CloudWatch dashboard** `Zonewatch` | Cameras, detector load, viewers, per-camera FPS and occupancy, CloudFront egress, and recent errors. The `DashboardUrl` output links to it. |
 | **AWS WAF web ACL** (CloudFront scope) | A per-IP rate limit (429 above 2,000 requests per 5 minutes), plus AWS's IP-reputation and known-bad-inputs rule groups. See [Cost and abuse controls](cost.md#cost-and-abuse-controls). |
-| **AWS Budget** `CrowdCounting-monthly` | Monthly cost budget for resources tagged `Project=CrowdCounting`; notifies at 80% of actual and 100% of forecast spend. |
+| **AWS Budget** `Zonewatch-monthly` | Monthly cost budget for resources tagged `Project=Zonewatch`; notifies at 80% of actual and 100% of forecast spend. |
 | **2 instance status alarms** | `StatusCheckFailed_Instance` reboots the instance. `StatusCheckFailed_System` triggers an EventBridge rule that runs the AWS-owned `AWS-RestartEC2Instance` runbook (stop, then start), which moves the instance to healthy hardware. EC2's built-in CloudWatch *recover* action can't be used: it isn't supported on g4dn, because g4dn has NVMe instance-store volumes. |
 | **EventBridge rule + IAM role** | Connects the host-check alarm to the restart runbook. The role can only start that runbook and stop/start this one instance. |
-| **EventBridge Scheduler pair** (optional, off by default) | Stops the instance nightly and starts it every morning. Turn it on with `-c crowdcounting:schedule=true`. |
-| **`CrowdCountingGithubDeploy` stack** (separate) | The GitHub OIDC provider and the two roles the deploy workflow assumes. See [Continuous deployment](ci-cd.md). |
+| **EventBridge Scheduler pair** (optional, off by default) | Stops the instance nightly and starts it every morning. Turn it on with `-c zonewatch:schedule=true`. |
+| **`ZonewatchGithubDeploy` stack** (separate) | The GitHub OIDC provider and the two roles the deploy workflow assumes. See [Continuous deployment](ci-cd.md). |

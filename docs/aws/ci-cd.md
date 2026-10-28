@@ -31,9 +31,9 @@ the repo before AWS is set up.
 
    ```bash
    cd infra
-   npx aws-cdk@2 deploy CrowdCountingGithubDeploy --profile <p>
+   npx aws-cdk@2 deploy ZonewatchGithubDeploy --profile <p>
    # If the account already has a GitHub OIDC provider:
-   #   -c crowdcounting:githubOidcProviderArn=arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com
+   #   -c zonewatch:githubOidcProviderArn=arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com
    ```
 
 2. Create the two environments. Only `main` may use them, and `production` needs your
@@ -44,11 +44,11 @@ the repo before AWS is set up.
    for env in aws-plan production; do
      reviewers='[]'
      [ "$env" = production ] && reviewers="[{\"type\": \"User\", \"id\": $me}]"
-     gh api -X PUT "repos/mubinmodi/CrowdCountRegen/environments/$env" --input - <<JSON
+     gh api -X PUT "repos/mubinmodi/Zonewatch/environments/$env" --input - <<JSON
    {"reviewers": $reviewers,
     "deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
    JSON
-     gh api -X POST "repos/mubinmodi/CrowdCountRegen/environments/$env/deployment-branch-policies" \
+     gh api -X POST "repos/mubinmodi/Zonewatch/environments/$env/deployment-branch-policies" \
        -f name=main
    done
    ```

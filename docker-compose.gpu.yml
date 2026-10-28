@@ -6,14 +6,14 @@
 # Needs Docker Compose >= 2.24.4 (for `!override` and optional env_file entries).
 services:
   backend:
-    # Hand every CC_* setting in ./.env to the backend, so new settings (CC_DEMO_MODE,
-    # CC_STREAM_FPS, ...) work without a matching line in docker-compose.yml. Values listed
+    # Hand every ZW_* setting in ./.env to the backend, so new settings (ZW_DEMO_MODE,
+    # ZW_STREAM_FPS, ...) work without a matching line in docker-compose.yml. Values listed
     # under `environment:` there still take precedence.
     env_file:
       - path: .env
         required: false
     environment:
-      CC_DEVICE: ${CC_DEVICE:-cuda:0}
+      ZW_DEVICE: ${ZW_DEVICE:-cuda:0}
     deploy:
       resources:
         reservations:

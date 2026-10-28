@@ -31,7 +31,7 @@ worker skips frames it didn't get to, and both video outputs send the latest JPE
 a queue. A camera slower than its source shows a lower FPS but never falls behind real time,
 which is the property that matters for safety alerts.
 
-The worker caps itself at `CC_MAX_FPS` (default 15) and reports the rate it actually achieves
+The worker caps itself at `ZW_MAX_FPS` (default 15) and reports the rate it actually achieves
 as an exponential moving average, which the UI shows per camera.
 
 ## Concurrency model

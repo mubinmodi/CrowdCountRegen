@@ -4,7 +4,7 @@
   SameSite=Lax cookies (Secure behind HTTPS); constant-time login for unknown emails.
 - **Tenant isolation.** Every query is scoped to the owner; other users' ids return 404.
 - **Camera credentials** are kept out of URLs, encrypted at rest (Fernet, key derived from
-  `CC_SECRET_KEY`), never returned to the browser, and only put back into the URL at the moment
+  `ZW_SECRET_KEY`), never returned to the browser, and only put back into the URL at the moment
   FFmpeg connects.
 - **Server-side request forgery is the main risk.** Any camera source is opened *by the
   server*, so in a multi-user or public deployment a user could point one at

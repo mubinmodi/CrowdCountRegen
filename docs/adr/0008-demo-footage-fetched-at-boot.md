@@ -12,7 +12,7 @@ fixed zone meaningless, and 4K sources waste decode time when the pipeline works
 
 `app/demo.py` declares each scenario as data: source URL, credit, trim window, zone, mode
 and limit. On first start (or `python -m app.demo`) each clip is downloaded, trimmed to its
-stable window, scaled to 960 px and written atomically to `CC_DEMO_VIDEO_DIR`. Its camera is
+stable window, scaled to 960 px and written atomically to `ZW_DEMO_VIDEO_DIR`. Its camera is
 created only once its video is ready, so the wall fills in progressively and never shows a
 "file not found" error.
 

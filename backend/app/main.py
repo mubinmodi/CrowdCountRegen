@@ -13,14 +13,14 @@ from app.schemas import AppConfigOut
 from app.viewers import VideoSlots
 from app.vision.manager import CameraManager
 
-log = logging.getLogger("crowdcounting")
+log = logging.getLogger("zonewatch")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     if settings.secret_key.startswith("dev-only"):
-        log.warning("CC_SECRET_KEY is not set; using an insecure development key.")
+        log.warning("ZW_SECRET_KEY is not set; using an insecure development key.")
     init_db()
     if settings.demo_mode:
         log.warning("Demo mode: no login, every visitor shares the demo account.")
@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="CrowdCounting", version="2.0.0", lifespan=lifespan)
+    app = FastAPI(title="Zonewatch", version="2.0.0", lifespan=lifespan)
     app.state.video_slots = VideoSlots(lambda: get_settings().max_video_viewers)
     app.add_middleware(
         CORSMiddleware,

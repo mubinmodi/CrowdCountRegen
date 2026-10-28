@@ -1,11 +1,11 @@
 {
-  "name": "crowdcounting-web",
+  "name": "zonewatch-web",
   "private": true,
   "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:lan": "CC_DEV_LAN=1 vite",
+    "dev:lan": "ZW_DEV_LAN=1 vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "lint": "eslint .",

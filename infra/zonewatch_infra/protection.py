@@ -45,9 +45,9 @@ def add_web_acl(scope: cdk.Stack, *, rate_limit: int) -> wafv2.CfnWebACL:
         scope,
         "WebAcl",
         scope="CLOUDFRONT",
-        description="CrowdCounting demo: per-IP rate limit and AWS managed rules",
+        description="Zonewatch demo: per-IP rate limit and AWS managed rules",
         default_action=wafv2.CfnWebACL.DefaultActionProperty(allow={}),
-        visibility_config=_visibility("CrowdCounting"),
+        visibility_config=_visibility("Zonewatch"),
         rules=[
             wafv2.CfnWebACL.RuleProperty(
                 name="RateLimitPerIp",
@@ -71,7 +71,7 @@ def add_web_acl(scope: cdk.Stack, *, rate_limit: int) -> wafv2.CfnWebACL:
 
 
 def add_budget(scope: Construct, *, monthly_usd: float, topic: sns.ITopic) -> None:
-    """A monthly cost budget for resources tagged Project=CrowdCounting, notifying the alerts
+    """A monthly cost budget for resources tagged Project=Zonewatch, notifying the alerts
     topic when actual spend passes 80% or the month's forecast passes 100%.
 
     The tag filter only works once Project is activated as a cost allocation tag (Billing
@@ -98,11 +98,11 @@ def add_budget(scope: Construct, *, monthly_usd: float, topic: sns.ITopic) -> No
         scope,
         "Budget",
         budget=budgets.CfnBudget.BudgetDataProperty(
-            budget_name="CrowdCounting-monthly",
+            budget_name="Zonewatch-monthly",
             budget_type="COST",
             time_unit="MONTHLY",
             budget_limit=budgets.CfnBudget.SpendProperty(amount=monthly_usd, unit="USD"),
-            cost_filters={"TagKeyValue": ["user:Project$CrowdCounting"]},
+            cost_filters={"TagKeyValue": ["user:Project$Zonewatch"]},
         ),
         notifications_with_subscribers=[notify("ACTUAL", 80), notify("FORECASTED", 100)],
     )

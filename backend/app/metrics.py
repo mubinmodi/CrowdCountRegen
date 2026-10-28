@@ -12,7 +12,7 @@ from app.vision.manager import CameraManager
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "CrowdCounting"
+NAMESPACE = "Zonewatch"
 # A camera is stalled when it should be producing frames and isn't. A source that stops
 # sending trips the reader's read timeout and moves to "error", so state alone is enough;
 # "waiting" (a phone camera nobody is publishing to) and "starting" are normal.

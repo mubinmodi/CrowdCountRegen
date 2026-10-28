@@ -16,7 +16,7 @@ from app.vision.sources.base import StreamInfo
 from app.vision.sources.errors import SourceError, classify
 from app.vision.sources.spec import SourceSpec
 
-USER_AGENT = "CrowdCounting/2"
+USER_AGENT = "Zonewatch/2"
 
 
 def ffmpeg_options(spec: SourceSpec) -> dict[str, str]:

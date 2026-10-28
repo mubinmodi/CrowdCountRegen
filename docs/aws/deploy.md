@@ -48,10 +48,10 @@ cd infra
 uv sync
 npx aws-cdk@2 synth --quiet                   # offline; runs the cdk-nag AwsSolutions checks
 npx aws-cdk@2 bootstrap --profile <p>         # once per account/region
-npx aws-cdk@2 deploy CrowdCounting --profile <p> -c crowdcounting:alertEmail=you@example.com
+npx aws-cdk@2 deploy Zonewatch --profile <p> -c zonewatch:alertEmail=you@example.com
 ```
 
-The app has two stacks: `CrowdCounting` (the demo) and `CrowdCountingGithubDeploy` (roles
+The app has two stacks: `Zonewatch` (the demo) and `ZonewatchGithubDeploy` (roles
 for [Continuous deployment](ci-cd.md)). Name the one you mean.
 
 The first deploy takes about 20–30 minutes. Most of that is the instance building the
@@ -63,7 +63,7 @@ finishes, the stack prints these outputs:
 | `Url` | `https://<id>.cloudfront.net`, the demo |
 | `InstanceId` | |
 | `SsmSessionCommand` | `aws ssm start-session --target i-… --region us-east-1` |
-| `SecretArn` | Where `CC_SECRET_KEY` lives |
+| `SecretArn` | Where `ZW_SECRET_KEY` lives |
 | `AlertsTopicArn` | The SNS topic alarms and the budget publish to |
 | `DashboardUrl` | The CloudWatch dashboard |
 
@@ -76,40 +76,40 @@ Pass these with `-c key=value`, or set them in `infra/cdk.json`:
 
 | Key | Default | |
 |---|---|---|
-| `crowdcounting:schedule` | `false` | `true` adds the nightly stop / morning start schedules |
-| `crowdcounting:stopCron` / `startCron` | `cron(0 23 * * ? *)` / `cron(0 8 * * ? *)` | EventBridge Scheduler expressions |
-| `crowdcounting:timezone` | `America/New_York` | Time zone for those expressions |
-| `crowdcounting:availabilityZones` | (first 2 in the account) | e.g. `us-east-1b,us-east-1c`. The instance goes in the first one. Use this if launch fails with *"…g4dn.xlarge is not supported in your requested Availability Zone"* or *InsufficientInstanceCapacity*. |
-| `crowdcounting:amiId` | (latest DLAMI) | Pin an AMI id so a new DLAMI release doesn't replace the instance |
-| `crowdcounting:maxVideoViewers` | `40` | Concurrent video connections before visitors get "busy" (counts keep working) |
-| `crowdcounting:videoSessionMaxS` | `1800` | Video connections close after this long; the viewer clicks to resume |
-| `crowdcounting:videoIdleTimeoutS` | `600` | Browsers pause video after this long without input |
-| `crowdcounting:wafRateLimit` | `2000` | Requests per IP per 5 minutes before WAF answers 429 |
-| `crowdcounting:monthlyBudgetUsd` | `450` | The monthly budget's limit |
-| `crowdcounting:alertEmail` | (none) | Email subscribed to the alerts topic |
-| `crowdcounting:githubRepository` | `mubinmodi/CrowdCountRegen` | Repository whose workflows may assume the deploy roles |
-| `crowdcounting:githubOidcProviderArn` | (create one) | Reuse an existing GitHub OIDC provider (an account can only have one per URL) |
+| `zonewatch:schedule` | `false` | `true` adds the nightly stop / morning start schedules |
+| `zonewatch:stopCron` / `startCron` | `cron(0 23 * * ? *)` / `cron(0 8 * * ? *)` | EventBridge Scheduler expressions |
+| `zonewatch:timezone` | `America/New_York` | Time zone for those expressions |
+| `zonewatch:availabilityZones` | (first 2 in the account) | e.g. `us-east-1b,us-east-1c`. The instance goes in the first one. Use this if launch fails with *"…g4dn.xlarge is not supported in your requested Availability Zone"* or *InsufficientInstanceCapacity*. |
+| `zonewatch:amiId` | (latest DLAMI) | Pin an AMI id so a new DLAMI release doesn't replace the instance |
+| `zonewatch:maxVideoViewers` | `40` | Concurrent video connections before visitors get "busy" (counts keep working) |
+| `zonewatch:videoSessionMaxS` | `1800` | Video connections close after this long; the viewer clicks to resume |
+| `zonewatch:videoIdleTimeoutS` | `600` | Browsers pause video after this long without input |
+| `zonewatch:wafRateLimit` | `2000` | Requests per IP per 5 minutes before WAF answers 429 |
+| `zonewatch:monthlyBudgetUsd` | `450` | The monthly budget's limit |
+| `zonewatch:alertEmail` | (none) | Email subscribed to the alerts topic |
+| `zonewatch:githubRepository` | `mubinmodi/Zonewatch` | Repository whose workflows may assume the deploy roles |
+| `zonewatch:githubOidcProviderArn` | (create one) | Reuse an existing GitHub OIDC provider (an account can only have one per URL) |
 
 ### Operating it
 
 ```bash
 aws ssm start-session --target <InstanceId> --region us-east-1 --profile <p>
 sudo tail -f /var/log/cloud-init-output.log                      # first-boot log
-cd /opt/crowdcounting
+cd /opt/zonewatch
 sudo docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.aws.yml ps
 sudo docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.aws.yml logs -f backend
 nvidia-smi                                                       # GPU in use?
 ```
 
 Logs are also in CloudWatch, without a shell:
-`aws logs tail /crowdcounting/demo --follow --profile <p>`.
+`aws logs tail /zonewatch/demo --follow --profile <p>`.
 
 If the first boot fails, CloudFormation rolls back and deletes the instance. To keep a failed
 instance around for debugging, deploy with `--no-rollback`.
 
 ## Boot sequence (user data)
 
-`infra/crowdcounting_infra/bootstrap.sh` runs once, on the instance's first boot:
+`infra/zonewatch_infra/bootstrap.sh` runs once, on the instance's first boot:
 
 1. It installs `aws-cfn-bootstrap` and `unzip` if they're missing. It also installs the Docker
    **buildx** plugin (if missing or older than 0.17) and the **compose** plugin (if missing).
@@ -117,14 +117,14 @@ instance around for debugging, deploy with `--no-rollback`.
 2. It registers the NVIDIA runtime with Docker (`nvidia-ctk runtime configure`) and checks the
    driver. The backend's PyTorch wheels need driver ≥ 580 (see
    [GPU notes](#gpu-notes-cuda-in-backenduvlock)). If there's no GPU or the driver is too
-   old, it writes `CC_DEVICE=cpu` and logs a warning, so the demo still comes up.
-3. It downloads and unzips the app to `/opt/crowdcounting`, reads the secret, and writes
-   `/opt/crowdcounting/.env` (mode 600):
-   `CC_SECRET_KEY`, `CC_DEMO_MODE=true`, `CC_STREAM_FPS=8`, `CC_DEMO_VIDEO_DIR=/data/demo-videos`,
-   `CC_DEVICE=cuda:0`, `CC_DETECTOR=ultralytics`, `CC_DETECTOR_IMGSZ=1280`,
-   `CC_CONFIDENCE=0.3`, `CC_COOKIE_SECURE=true`, the video cost controls
-   (`CC_MAX_VIDEO_VIEWERS`, `CC_VIDEO_SESSION_MAX_S`, `CC_VIDEO_IDLE_TIMEOUT_S`, from CDK
-   context), `CC_METRICS=emf`, and `AWS_REGION` / `CC_LOG_GROUP` for the logging override.
+   old, it writes `ZW_DEVICE=cpu` and logs a warning, so the demo still comes up.
+3. It downloads and unzips the app to `/opt/zonewatch`, reads the secret, and writes
+   `/opt/zonewatch/.env` (mode 600):
+   `ZW_SECRET_KEY`, `ZW_DEMO_MODE=true`, `ZW_STREAM_FPS=8`, `ZW_DEMO_VIDEO_DIR=/data/demo-videos`,
+   `ZW_DEVICE=cuda:0`, `ZW_DETECTOR=ultralytics`, `ZW_DETECTOR_IMGSZ=1280`,
+   `ZW_CONFIDENCE=0.3`, `ZW_COOKIE_SECURE=true`, the video cost controls
+   (`ZW_MAX_VIDEO_VIEWERS`, `ZW_VIDEO_SESSION_MAX_S`, `ZW_VIDEO_IDLE_TIMEOUT_S`, from CDK
+   context), `ZW_METRICS=emf`, and `AWS_REGION` / `ZW_LOG_GROUP` for the logging override.
 4. It runs `docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.aws.yml up -d --build`.
 5. It waits up to 15 minutes for `http://localhost/api/health` (through nginx) and then reports
    success or failure to CloudFormation with `cfn-signal`. CloudFormation waits up to
@@ -132,7 +132,7 @@ instance around for debugging, deploy with `--no-rollback`.
 
 `docker-compose.aws.yml` switches both containers to the `awslogs` log driver in non-blocking
 mode, so a slow CloudWatch never stalls the app. `docker-compose.gpu.yml` gives the backend the GPU (`deploy.resources.reservations.devices`),
-passes the whole `.env` to the backend container (`env_file`, so new `CC_*` settings need no
+passes the whole `.env` to the backend container (`env_file`, so new `ZW_*` settings need no
 change to `docker-compose.yml`), and publishes `web` on host port 80 instead of 8080. Both
 containers use `restart: unless-stopped`, so they come back after a reboot or a scheduled
 stop/start.
@@ -140,7 +140,7 @@ stop/start.
 ## Updating
 
 Merging to `main` deploys through [Continuous deployment](ci-cd.md). By hand:
-make your changes, then run `npx aws-cdk@2 deploy CrowdCounting --profile <p>` again. Any change
+make your changes, then run `npx aws-cdk@2 deploy Zonewatch --profile <p>` again. Any change
 to the included files changes the asset hash. The asset hash is part of the user data, so the
 deploy replaces the instance (immutable deploys):
 
@@ -152,16 +152,16 @@ deploy replaces the instance (immutable deploys):
 Expect a few seconds of dropped streams at the switch. **Demo data does not carry over**: the
 database lives on the instance and is reseeded on boot, which is the intent for a demo. A
 newer DLAMI behind the SSM parameter also triggers a replacement on the next deploy, unless
-you pin `crowdcounting:amiId`.
+you pin `zonewatch:amiId`.
 
-Use `npx aws-cdk@2 diff CrowdCounting` to preview changes first. The deploy uploads your **working tree**
+Use `npx aws-cdk@2 diff Zonewatch` to preview changes first. The deploy uploads your **working tree**
 (uncommitted changes included), not a git commit.
 
 ## Tearing down
 
 ```bash
-cd infra && npx aws-cdk@2 destroy CrowdCounting --profile <p>
-npx aws-cdk@2 destroy CrowdCountingGithubDeploy --profile <p>   # if you set up deployment
+cd infra && npx aws-cdk@2 destroy Zonewatch --profile <p>
+npx aws-cdk@2 destroy ZonewatchGithubDeploy --profile <p>   # if you set up deployment
 ```
 
 This removes everything in the stack. The secret goes into Secrets Manager's default 30-day
@@ -184,7 +184,7 @@ needed. Two caveats:
 
 - **Driver ≥ 580.** CUDA 13 user-space libraries need NVIDIA driver **580 or newer**. Current
   releases of the DLAMI Base OSS NVIDIA Driver AMI should ship a 580-series driver, but this
-  hasn't been checked on a live instance. An older or pinned AMI might not, in which case the bootstrap falls back to `CC_DEVICE=cpu` and logs a warning.
+  hasn't been checked on a live instance. An older or pinned AMI might not, in which case the bootstrap falls back to `ZW_DEVICE=cpu` and logs a warning.
   Check with `nvidia-smi` on the instance. If you need an older driver, rebuild the backend
   against CUDA 12 wheels (the PyTorch `cu126`/`cu128` index) instead.
 - **The T4 is Turing (sm_75).** That's still supported by CUDA 13, which dropped Maxwell,
